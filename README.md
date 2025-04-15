@@ -13,10 +13,9 @@
 
 ## Getting Started
 
-1. Fork this repo to your own Github account.
-2. Clone it.
-3. `cd` into the project directory.
-4. Run `pipenv shell` to create a virtual environment.
+1. Clone this repo.
+1. `cd` into the project directory.
+1. Run `pipenv shell` to create a virtual environment.
 
 ## Github OAuth App
 
