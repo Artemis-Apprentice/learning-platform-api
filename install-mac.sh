@@ -6,7 +6,7 @@ set -eu
 for i in "$@"; do
     case $i in
     -d=* | --database=*) DATABASE="${i#*=}" ;;
-    -u=* | --user=*) USER="${i#*=}" ;;
+    -u=* | --user=*) DB_USER="${i#*=}" ;;
     -p=* | --password=*) PASSWORD="${i#*=}" ;;
     -c=* | --clientid=*) CLIENTID="${i#*=}" ;;
     -s=* | --secretkey=*) SECRETKEY="${i#*=}" ;;
@@ -67,15 +67,28 @@ if ! command -v psql &>/dev/null; then
 fi
 
 # Drop database before it's (re)created
-sudo su - postgres <<COMMANDS
+
 psql -c "DROP DATABASE IF EXISTS $DATABASE WITH (FORCE);"
 psql -c "CREATE DATABASE $DATABASE;"
-psql -c "CREATE USER $USER WITH PASSWORD '$PASSWORD';"
-psql -c "ALTER ROLE $USER SET client_encoding TO 'utf8';"
-psql -c "ALTER ROLE $USER SET default_transaction_isolation TO 'read committed';"
-psql -c "ALTER ROLE $USER SET timezone TO 'UTC';"
-psql -c "GRANT ALL PRIVILEGES ON DATABASE $DATABASE TO $USER;"
-COMMANDS
+# Create user if needed
+psql -tAc "SELECT 1 FROM pg_roles WHERE rolname = '$DB_USER'" | grep -q 1 || \
+psql -c "CREATE USER $DB_USER WITH PASSWORD '$PASSWORD';"
+
+# Set user options
+psql -c "ALTER ROLE $DB_USER SET client_encoding TO 'utf8';"
+psql -c "ALTER ROLE $DB_USER SET default_transaction_isolation TO 'read committed';"
+psql -c "ALTER ROLE $DB_USER SET timezone TO 'UTC';"
+
+# Grant privileges on DB
+psql -c "GRANT ALL PRIVILEGES ON DATABASE $DATABASE TO $DB_USER;"
+
+# Schema ownership + rights
+psql -d "$DATABASE" -c "ALTER SCHEMA public OWNER TO $DB_USER;"
+psql -d "$DATABASE" -c "GRANT USAGE, CREATE ON SCHEMA public TO $DB_USER;"
+
+
+
+
 
 # Check if Pipenv is installed
 if ! command -v pipenv &>/dev/null; then
@@ -103,19 +116,15 @@ pip3 install wheel
 # Install dependencies from requirements.txt file
 pip3 install -r requirements.txt
 
-# Find which version of Postgres is installed
-echo "Checking version of Postgres"
-VERSION=$($(sudo find /usr -wholename '*/bin/postgres') -V | (grep -E -oah -m 1 '[0-9]{1,}') | head -1)
-echo "Found version $VERSION"
-
 # This is where we left off on Thursday
 # TODO: Don't need any of this for mac
+PSFILEPATH=$(psql -c 'SHOW hba_file;' | sed -n '3p' | xargs)
 
 # Replace `scram-sha-256` with `trust` in the pg_hba file to enable peer authentication
-sudo sed -i -e 's/scram-sha-256/trust/g' /etc/postgresql/"$VERSION"/main/pg_hba.conf
+sudo sed -i -e 's/scram-sha-256/trust/g' $PSFILEPATH
 
 # Restart postgres service
-sudo systemctl restart postgresql.service
+brew services restart postgresql@16
 
 echo "Generating Django password"
 export DJANGO_SETTINGS_MODULE="LearningPlatform.settings"
