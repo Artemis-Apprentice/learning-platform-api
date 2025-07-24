@@ -20,6 +20,7 @@ if [ -n "$LEARN_OPS_SUPERUSER_PASSWORD" ] && [ -n "$LEARN_OPS_SUPERUSER_NAME" ];
     echo "Generating Django password hash..."
     if [ -f "./djangopass.py" ]; then
         echo "here I am"
+        export DJANGO_SETTINGS_MODULE="LearningPlatform.settings"
         DJANGO_GENERATED_PASSWORD=$(python3 ./djangopass.py "$LEARN_OPS_SUPERUSER_PASSWORD" 2>&1)
         echo
         echo
@@ -119,4 +120,10 @@ fi
 echo "Collecting static files..."
 python3 manage.py collectstatic --noinput || echo "Failed to collect static files, continuing..."
 
+# ... existing script content ...
+
 echo "Django setup complete!"
+
+# Start the Django development server
+echo "Starting Django development server..."
+exec python manage.py runserver 0.0.0.0:8000
