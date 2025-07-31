@@ -11,7 +11,7 @@
 [Ll]ocal
 [Ss]cripts
 pyvenv.cfg
-.env
+.env*
 .venv
 pip-selfcheck.json
 .vscode/settings.json
