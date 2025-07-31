@@ -19,12 +19,8 @@ wait_for_postgres
 if [ -n "$LEARN_OPS_SUPERUSER_PASSWORD" ] && [ -n "$LEARN_OPS_SUPERUSER_NAME" ]; then
     echo "Generating Django password hash..."
     if [ -f "./djangopass.py" ]; then
-        echo "here I am"
         export DJANGO_SETTINGS_MODULE="LearningPlatform.settings"
         DJANGO_GENERATED_PASSWORD=$(python3 ./djangopass.py "$LEARN_OPS_SUPERUSER_PASSWORD" 2>&1)
-        echo
-        echo
-        echo $DJANGO_GENERATED_PASSWORD, "django pass"
         # Ensure fixtures directory exists
         mkdir -p ./LearningAPI/fixtures
         
