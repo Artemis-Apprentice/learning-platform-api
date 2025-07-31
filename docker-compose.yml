@@ -1,0 +1,62 @@
+
+
+services:
+  db:
+    image: postgres:16
+    environment:
+         # PostgreSQL default settings
+      - POSTGRES_DB=postgres
+      - POSTGRES_USER=postgres
+      - POSTGRES_PASSWORD=postgres
+      # Application-specific database settings (for init script)
+      - LEARN_OPS_DB=${LEARN_OPS_DB}
+      - LEARN_OPS_USER=${LEARN_OPS_USER}
+      - LEARN_OPS_PASSWORD=${LEARN_OPS_PASSWORD}
+    volumes:
+      - lp_data:/var/lib/postgresql/data
+      - ./init-db.sh:/docker-entrypoint-initdb.d/01-init.sh:ro
+    ports:
+      - "5432:5432"
+    healthcheck:
+      test: ["CMD-SHELL", "pg_isready -U ${LEARN_OPS_USER} -d ${LEARN_OPS_DB}"]
+      interval: 5s
+      timeout: 5s
+      retries: 5
+
+  web:
+    build: .
+    working_dir: /app
+    environment:
+      - PYTHONUNBUFFERED=1
+      - PYTHONDONTWRITEBYTECODE=1
+      - LEARN_OPS_DB=${LEARN_OPS_DB}
+      - LEARN_OPS_USER=${LEARN_OPS_USER}
+      - LEARN_OPS_PASSWORD=${LEARN_OPS_PASSWORD}
+      - LEARN_OPS_HOST=db
+      - LEARN_OPS_PORT=${LEARN_OPS_PORT}
+      - LEARN_OPS_CLIENT_ID=${LEARN_OPS_CLIENT_ID}
+      - LEARN_OPS_SECRET_KEY=${LEARN_OPS_SECRET_KEY}
+      - LEARN_OPS_DJANGO_SECRET_KEY=${LEARN_OPS_DJANGO_SECRET_KEY}
+      - LEARN_OPS_ALLOWED_HOSTS=${LEARN_OPS_ALLOWED_HOSTS}
+      - LEARN_OPS_SUPERUSER_NAME=${LEARN_OPS_SUPERUSER_NAME}
+      - LEARN_OPS_SUPERUSER_PASSWORD=${LEARN_OPS_SUPERUSER_PASSWORD}
+    volumes:
+      - .:/app
+    ports:
+      - "8000:8000"
+    depends_on:
+      db:
+        condition: service_healthy
+    restart: unless-stopped
+    command: >
+      bash -c "
+        apt-get update &&
+        apt-get install -y build-essential libpq-dev postgresql-client curl git &&
+        pip install --upgrade pip wheel &&
+        pip install -r requirements.txt &&
+        chmod +x /app/django-entrypoint.sh &&
+        /app/django-entrypoint.sh &&
+        python manage.py runserver 0.0.0.0:8000
+      "
+volumes:
+  lp_data:

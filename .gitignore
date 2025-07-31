@@ -11,6 +11,7 @@
 [Ll]ocal
 [Ss]cripts
 pyvenv.cfg
+.env*
 .venv
 pip-selfcheck.json
 .vscode/settings.json
@@ -22,3 +23,4 @@ debug.log
 .ubuntusetup
 prod_backup*.json
 prod_backup*.sql
+superuser.json
