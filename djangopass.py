@@ -6,7 +6,7 @@ try:
     
     password_hash = make_password(sys.argv[1])
     print(password_hash)
-    # sys.exit(0)
+ 
 except ImportError as e:
     print(f"Error importing Django modules: {str(e)}", file=sys.stderr)
     sys.exit(1)
