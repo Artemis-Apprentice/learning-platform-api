@@ -23,4 +23,4 @@ debug.log
 .ubuntusetup
 prod_backup*.json
 prod_backup*.sql
-*/superuser.json
+superuser.json
