@@ -40,6 +40,7 @@ services:
       - LEARN_OPS_ALLOWED_HOSTS=${LEARN_OPS_ALLOWED_HOSTS}
       - LEARN_OPS_SUPERUSER_NAME=${LEARN_OPS_SUPERUSER_NAME}
       - LEARN_OPS_SUPERUSER_PASSWORD=${LEARN_OPS_SUPERUSER_PASSWORD}
+      - LEARNING_GITHUB_CALLBACK=http://localhost:3000/auth/github
     volumes:
       - .:/app
     ports:
