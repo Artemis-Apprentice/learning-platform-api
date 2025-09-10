@@ -4,18 +4,12 @@
 
 ### Learning Platform Request Collection
 
-1. Install [Postman](https://www.postman.com/downloads/)
-2. Open Postman app
-3. Click Import from the navbar
-4. The `LearnOps.postman_collection.json` file contains the links
-5. You should be prompted to import LearnOps Collection.
-6. Click the Import button to complete the process.
+1. Install your favorite API testing tool. (E.g. Postman, Insomnia, Yaak)
 
 ## Getting Started
 
 1. Clone this repo.
 1. `cd` into the project directory.
-1. Run `pipenv shell` to create a virtual environment.
 
 ## Github OAuth App
 
@@ -62,54 +56,18 @@ export LEARN_OPS_SUPERUSER_PASSWORD=AdminPasswordOfYourChoice
 
 Then reload your bash session with `source ~/.zshrc` if you are using zshell or `source ~/.bashrc` if you have the default bash environment.
 
-### Install and Configure Postgres
+### Install Docker
+1. Install Docker Desktop for your machine https://docs.docker.com/desktop/
+2. Once installation is complete, run `docker compose up --build`
 
-In your Ubuntu terminal run the following command to initiate the installation and configuration of the Learning Platform. It will install the correct version of Python, PostgreSQL and then run migrations to create tables, and finally load fixtures to seed the database with sample data.
 
-If you are on PC:
-```sh
-./linuxInstall-dev.sh -d=$LEARN_OPS_DB \
-    -u=$LEARN_OPS_USER \
-    -p=$LEARN_OPS_PASSWORD \
-    -r=$LEARN_OPS_SUPERUSER_NAME \
-    -j=$LEARN_OPS_SUPERUSER_PASSWORD \
-    -c=$LEARN_OPS_CLIENT_ID \
-    -s=$LEARN_OPS_SECRET_KEY
-```
-
-When prompted to "remove write-protected regular file './LearningAPI/fixtures/superuser.json'?" type `y`
-
-If you are on mac:
-```sh
-./macInstall-dev.sh -d=$LEARN_OPS_DB \
-    -u=$LEARN_OPS_USER \
-    -p=$LEARN_OPS_PASSWORD \
-    -r=$LEARN_OPS_SUPERUSER_NAME \
-    -j=$LEARN_OPS_SUPERUSER_PASSWORD \
-    -c=$LEARN_OPS_CLIENT_ID \
-    -s=$LEARN_OPS_SECRET_KEY
-```
 ## Testing the Installation
 
 1. Start the API in debug mode in Visual Studio Code.
 1. Visit http://localhost:8000/admin
 1. Authenticate with the superuser credentials you created previously and then you can view all kinds of data that is in your database.
 
-## Make Yourself an Instructor
-
-1. Start the React client application.
-1. Authorize the client with Github.
-1. Visit http://localhost:8000/admin and authenticate with your superuser credentials.
-2. Click on **Users** in the left navigation.
-3. Find the account that was just created for your Github authorization by searching for your Github username.
-4. Click on your user account.
-5. Toggle **Staff status** to be on.
-6. In the **Group** sections, double click **Instructor** so that it moves to the _Chosen groups_ list.
-7. Close the browser tab that is running the Learning Platform.
-8. Open a new tab and visit http://localhost:3000 again and authenticate.
-9. You should now see the instructor interface.
-
-## Assets
+Move onto the front end repo and follow the instructions in that README
 
 ### ERD
 
