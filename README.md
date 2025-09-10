@@ -63,7 +63,7 @@ Then reload your bash session with `source ~/.zshrc` if you are using zshell or 
 
 ## Testing the Installation
 
-1. Start the API in debug mode in Visual Studio Code.
+1. The API should be running after step 2 above (`docker compose up --build`).
 1. Visit http://localhost:8000/admin
 1. Authenticate with the superuser credentials you created previously and then you can view all kinds of data that is in your database.
 
