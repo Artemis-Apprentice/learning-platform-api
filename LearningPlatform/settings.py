@@ -14,6 +14,7 @@ import os
 import logging
 from logging.handlers import RotatingFileHandler
 from django.core.management.utils import get_random_secret_key
+import structlog # Added for structlog configuration
 
 # Build paths inside the project like this: os.path.join(BASE_DIR, ...)
 BASE_DIR = os.path.dirname(os.path.dirname(os.path.abspath(__file__)))
@@ -51,6 +52,7 @@ INSTALLED_APPS = [
     'allauth.socialaccount',
     'allauth.socialaccount.providers.github',
     'corsheaders',
+    'django_structlog', # Added for structlog integration
     'LearningAPI',
 ]
 
@@ -73,9 +75,43 @@ MIDDLEWARE = [
     'django.middleware.common.CommonMiddleware',
     'django.middleware.csrf.CsrfViewMiddleware',
     'django.contrib.auth.middleware.AuthenticationMiddleware',
+    'django_structlog.middlewares.RequestMiddleware', # Added for structlog request context
     'django.contrib.messages.middleware.MessageMiddleware',
     'django.middleware.clickjacking.XFrameOptionsMiddleware',
 ]
+
+# Structlog Configuration
+STRUCTLOG_DEFAULTS = {
+    "cache_logger_on_first_use": True,
+    "wrapper_class": "structlog.make_filtering_bound_logger",
+    "processors": [
+        # Add shared processors for all loggers
+        "structlog.stdlib.add_logger_name",
+        "structlog.stdlib.add_log_level",
+        "structlog.processors.TimeStamper",
+        "structlog.processors.StackInfoRenderer",
+        "structlog.processors.format_exc_info",
+        "structlog.processors.CallsiteParameterAdder", # Adds module, funcname, lineno
+        "structlog.dev.ConsoleRenderer" if DEBUG else "structlog.processors.JSONRenderer",
+    ],
+    "logger_factory": "structlog.stdlib.LoggerFactory",
+    "find_caller_level": 2,
+}
+
+# Configure CallsiteParameterAdder to include specific parameters
+# This should be a tuple of strings, e.g., ("filename", "lineno", "func_name", "module")
+# For example, to add module, funcname, and lineno:
+STRUCTLOG_DEFAULTS["processors"].insert(
+    STRUCTLOG_DEFAULTS["processors"].index("structlog.processors.CallsiteParameterAdder") + 1,
+    structlog.processors.CallsiteParameterAdder(
+        {
+            structlog.processors.CallsiteParameter.FILENAME,
+            structlog.processors.CallsiteParameter.LINENO,
+            structlog.processors.CallsiteParameter.FUNC_NAME,
+            structlog.processors.CallsiteParameter.MODULE,
+        }
+    )
+)
 
 REST_FRAMEWORK = {
     'DEFAULT_AUTHENTICATION_CLASSES': (
@@ -146,45 +182,84 @@ AUTH_PASSWORD_VALIDATORS = [
 
 LOGGING = {
     'version': 1,
-    'disable_existing_loggers': True,
+    'disable_existing_loggers': False, # Set to False to allow structlog to take over
     'formatters': {
-        'standard': {
+        'json_formatter': {
+            '()': 'structlog.stdlib.ProcessorFormatter',
+            'processor': 'structlog.processors.JSONRenderer',
+        },
+        'console_formatter': {
+            '()': 'structlog.stdlib.ProcessorFormatter',
+            'processor': 'structlog.dev.ConsoleRenderer',
+        },
+        'standard': { # Keep existing standard formatter if needed for non-structlog logs
             'format' : "[%(asctime)s] %(levelname)s [%(name)s:%(lineno)s] %(message)s",
             'datefmt' : "%d/%b/%Y %H:%M:%S"
         },
     },
     'handlers': {
+        'console': {
+            'level': 'DEBUG',
+            'class': 'logging.StreamHandler',
+            'formatter': 'console_formatter' if DEBUG else 'json_formatter', # Use structlog formatters
+        },
         'logfile': {
             'level':'DEBUG',
             'class':'logging.handlers.RotatingFileHandler',
             'filename': os.path.join(BASE_DIR, 'logs/debug.log'),
             'maxBytes': 50000,
             'backupCount': 2,
-            'formatter': 'standard',
+            'formatter': 'json_formatter', # Use structlog JSON formatter for file
         },
-        'console':{
-            'level':'INFO',
-            'class':'logging.StreamHandler',
-            'formatter': 'standard'
+        'null': {
+            'class': 'logging.NullHandler',
         },
     },
     'loggers': {
         'django': {
-            'handlers':['console'],
+            'handlers': ['console'],
             'propagate': True,
-            'level':'WARN',
+            'level': 'INFO', # Adjust level as needed
+        },
+        'django.request': {
+            'handlers': ['console', 'logfile'],
+            'level': 'INFO',
+            'propagate': False,
+        },
+        'django.server': {
+            'handlers': ['console', 'logfile'],
+            'level': 'INFO',
+            'propagate': False,
         },
         'django.db.backends': {
             'handlers': ['console'],
-            'level': 'DEBUG',
+            'level': 'INFO', # Adjust level as needed
             'propagate': False,
         },
-        'LearningPlatform': {
+        'LearningPlatform': { # Your project's main logger
             'handlers': ['console', 'logfile'],
             'level': 'DEBUG',
+            'propagate': False, # Prevent double logging if root logger also handles
         },
+        'structlog': { # This logger captures structlog output
+            'handlers': ['console', 'logfile'],
+            'level': 'INFO', # Set a default level for structlog
+            'propagate': False,
+        },
+        '': { # Root logger
+            'handlers': ['console', 'logfile'],
+            'level': 'INFO', # Default level for anything not explicitly configured
+        }
     }
 }
+
+# Configure structlog to use the standard library logging
+structlog.configure(
+    processors=STRUCTLOG_DEFAULTS["processors"],
+    logger_factory=STRUCTLOG_DEFAULTS["logger_factory"],
+    wrapper_class=STRUCTLOG_DEFAULTS["wrapper_class"],
+    cache_logger_on_first_use=STRUCTLOG_DEFAULTS["cache_logger_on_first_use"],
+)
 
 # Internationalization
 # https://docs.djangoproject.com/en/2.0/topics/i18n/

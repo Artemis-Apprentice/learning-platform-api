@@ -21,6 +21,8 @@ dj-rest-auth = "*"
 django-allauth = "*"
 requests = "*"
 "backports.weakref" = "*"
+structlog = "*"
+django-structlog = "*"
 
 [requires]
 python_version = "*"
