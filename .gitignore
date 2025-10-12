@@ -24,3 +24,5 @@ debug.log
 prod_backup*.json
 prod_backup*.sql
 superuser.json
+.roo/
+.roomodes
