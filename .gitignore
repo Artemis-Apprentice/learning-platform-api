@@ -24,5 +24,8 @@ debug.log
 prod_backup*.json
 prod_backup*.sql
 superuser.json
+context_portal/
+
 .roo/
 .roomodes
+

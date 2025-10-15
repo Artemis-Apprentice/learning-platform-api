@@ -91,27 +91,19 @@ STRUCTLOG_DEFAULTS = {
         "structlog.processors.TimeStamper",
         "structlog.processors.StackInfoRenderer",
         "structlog.processors.format_exc_info",
-        "structlog.processors.CallsiteParameterAdder", # Adds module, funcname, lineno
+        structlog.processors.CallsiteParameterAdder( # Adds module, funcname, lineno
+            {
+                structlog.processors.CallsiteParameter.FILENAME,
+                structlog.processors.CallsiteParameter.LINENO,
+                structlog.processors.CallsiteParameter.FUNC_NAME,
+                structlog.processors.CallsiteParameter.MODULE,
+            }
+        ),
         "structlog.dev.ConsoleRenderer" if DEBUG else "structlog.processors.JSONRenderer",
     ],
     "logger_factory": "structlog.stdlib.LoggerFactory",
     "find_caller_level": 2,
 }
-
-# Configure CallsiteParameterAdder to include specific parameters
-# This should be a tuple of strings, e.g., ("filename", "lineno", "func_name", "module")
-# For example, to add module, funcname, and lineno:
-STRUCTLOG_DEFAULTS["processors"].insert(
-    STRUCTLOG_DEFAULTS["processors"].index("structlog.processors.CallsiteParameterAdder") + 1,
-    structlog.processors.CallsiteParameterAdder(
-        {
-            structlog.processors.CallsiteParameter.FILENAME,
-            structlog.processors.CallsiteParameter.LINENO,
-            structlog.processors.CallsiteParameter.FUNC_NAME,
-            structlog.processors.CallsiteParameter.MODULE,
-        }
-    )
-)
 
 REST_FRAMEWORK = {
     'DEFAULT_AUTHENTICATION_CLASSES': (
