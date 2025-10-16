@@ -14,6 +14,7 @@ import os
 import logging
 from logging.handlers import RotatingFileHandler
 from django.core.management.utils import get_random_secret_key
+import structlog # Added for structlog configuration
 
 # Build paths inside the project like this: os.path.join(BASE_DIR, ...)
 BASE_DIR = os.path.dirname(os.path.dirname(os.path.abspath(__file__)))
@@ -51,6 +52,7 @@ INSTALLED_APPS = [
     'allauth.socialaccount',
     'allauth.socialaccount.providers.github',
     'corsheaders',
+    'django_structlog', # Added for structlog integration
     'LearningAPI',
 ]
 
@@ -73,6 +75,7 @@ MIDDLEWARE = [
     'django.middleware.common.CommonMiddleware',
     'django.middleware.csrf.CsrfViewMiddleware',
     'django.contrib.auth.middleware.AuthenticationMiddleware',
+    'django_structlog.middlewares.RequestMiddleware', # Added for structlog request context
     'django.contrib.messages.middleware.MessageMiddleware',
     'django.middleware.clickjacking.XFrameOptionsMiddleware',
 ]
@@ -145,46 +148,77 @@ AUTH_PASSWORD_VALIDATORS = [
 ]
 
 LOGGING = {
-    'version': 1,
-    'disable_existing_loggers': True,
-    'formatters': {
-        'standard': {
-            'format' : "[%(asctime)s] %(levelname)s [%(name)s:%(lineno)s] %(message)s",
-            'datefmt' : "%d/%b/%Y %H:%M:%S"
+    "version": 1,
+    "disable_existing_loggers": False,
+    "formatters": {
+        "json_formatter": {
+            "()": structlog.stdlib.ProcessorFormatter,
+            "processor": structlog.processors.JSONRenderer(),
+        },
+        "plain_console": {
+            "()": structlog.stdlib.ProcessorFormatter,
+            "processor": structlog.dev.ConsoleRenderer(),
+        },
+        "key_value": {
+            "()": structlog.stdlib.ProcessorFormatter,
+            "processor": structlog.processors.KeyValueRenderer(key_order=['timestamp', 'level', 'event', 'logger']),
         },
     },
-    'handlers': {
-        'logfile': {
-            'level':'DEBUG',
-            'class':'logging.handlers.RotatingFileHandler',
-            'filename': os.path.join(BASE_DIR, 'logs/debug.log'),
-            'maxBytes': 50000,
-            'backupCount': 2,
-            'formatter': 'standard',
+    "handlers": {
+        # Important notes regarding handlers.
+        #
+        # 1. Make sure you use handlers adapted for your project.
+        # These handlers configurations are only examples for this library.
+        # See python's logging.handlers: https://docs.python.org/3/library/logging.handlers.html
+        #
+        # 2. You might also want to use different logging configurations depending of the environment.
+        # Different files (local.py, tests.py, production.py, ci.py, etc.) or only conditions.
+        # See https://docs.djangoproject.com/en/dev/topics/settings/#designating-the-settings
+        "console": {
+            "class": "logging.StreamHandler",
+            "formatter": "plain_console",
         },
-        'console':{
-            'level':'INFO',
-            'class':'logging.StreamHandler',
-            'formatter': 'standard'
+        "json_file": {
+            "class": "logging.handlers.WatchedFileHandler",
+            "filename": "logs/json.log",
+            "formatter": "json_formatter",
+        },
+        "flat_line_file": {
+            "class": "logging.handlers.WatchedFileHandler",
+            "filename": "logs/flat_line.log",
+            "formatter": "key_value",
         },
     },
-    'loggers': {
-        'django': {
-            'handlers':['console'],
-            'propagate': True,
-            'level':'WARN',
+    "loggers": {
+        "django_structlog": {
+            "handlers": ["console", "flat_line_file", "json_file"],
+            "level": "INFO",
         },
-        'django.db.backends': {
-            'handlers': ['console'],
-            'level': 'DEBUG',
-            'propagate': False,
-        },
-        'LearningPlatform': {
-            'handlers': ['console', 'logfile'],
-            'level': 'DEBUG',
+        # Make sure to replace the following logger's name for yours
+        "LearningAPI": {
+            "handlers": ["console", "flat_line_file", "json_file"],
+            "level": "INFO",
         },
     }
 }
+
+# Configure structlog to use the standard library logging
+structlog.configure(
+    processors=[
+        structlog.contextvars.merge_contextvars,
+        structlog.stdlib.filter_by_level,
+        structlog.processors.TimeStamper(fmt="iso"),
+        structlog.stdlib.add_logger_name,
+        structlog.stdlib.add_log_level,
+        structlog.stdlib.PositionalArgumentsFormatter(),
+        structlog.processors.StackInfoRenderer(),
+        structlog.processors.format_exc_info,
+        structlog.processors.UnicodeDecoder(),
+        structlog.stdlib.ProcessorFormatter.wrap_for_formatter,
+    ],
+    logger_factory=structlog.stdlib.LoggerFactory(),
+    cache_logger_on_first_use=True,
+)
 
 # Internationalization
 # https://docs.djangoproject.com/en/2.0/topics/i18n/

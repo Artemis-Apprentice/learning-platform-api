@@ -1,4 +1,7 @@
 from django.db.models import Count, Q
+import structlog # Add this import at the top of the file
+
+logger = structlog.get_logger("LearningAPI") # Initialize the logger at the module level
 from django.db import IntegrityError
 from django.http import HttpResponseServerError
 from rest_framework import serializers, status
@@ -48,6 +51,15 @@ class CohortViewSet(ViewSet):
 
         try:
             cohort.save()
+            logger.info(
+                "Cohort created successfully",
+                cohort_id=cohort.id,
+                cohort_name=cohort.name,
+                slack_channel=cohort.slack_channel,
+                start_date=str(cohort.start_date),
+                end_date=str(cohort.end_date),
+                created_by=request.auth.user.username if request.auth.user.is_authenticated else 'anonymous',
+            )
 
             # Assign client side course
             cohort_course_client = CohortCourse()
@@ -71,12 +83,30 @@ class CohortViewSet(ViewSet):
             return Response(serializer.data, status=status.HTTP_201_CREATED)
 
         except IntegrityError as ex:
+            logger.error(
+                "Cohort creation failed due to integrity error",
+                reason=str(ex),
+                cohort_name=request.data.get("name"),
+                slack_channel=request.data.get("slackChannel"),
+                created_by=request.auth.user.username if request.auth.user.is_authenticated else 'anonymous',
+                event="cohort_creation_failure",
+                exc_info=True
+            )
             if "cohort_name_key" in ex.args[0]:
                 return Response({"reason": "Duplicate cohort name."}, status=status.HTTP_400_BAD_REQUEST)
             else:
                 return Response({"reason": "Duplicate cohort Slack channel."}, status=status.HTTP_400_BAD_REQUEST)
 
         except Exception as ex:
+            logger.error(
+                "Cohort creation failed unexpectedly",
+                reason=str(ex),
+                cohort_name=request.data.get("name"),
+                slack_channel=request.data.get("slackChannel"),
+                created_by=request.auth.user.username if request.auth.user.is_authenticated else 'anonymous',
+                event="cohort_creation_failure",
+                exc_info=True
+            )
             return Response({"reason": ex.args[0]}, status=status.HTTP_400_BAD_REQUEST)
 
     def retrieve(self, request, pk=None):

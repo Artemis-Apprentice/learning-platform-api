@@ -1,21 +1,24 @@
-FROM --platform=linux/amd64 python:3.11-slim
+FROM python:3.11-slim
 
 WORKDIR /app
 
-# Install system dependencies including pipenv
+# Install system dependencies
 RUN apt-get update && \
-    apt-get install -y build-essential libpq-dev postgresql-client curl git && \
-    pip install --upgrade pip pipenv && \
+    apt-get install -y --no-install-recommends \
+    build-essential \
+    libpq-dev \
+    postgresql-client \
+    curl \
+    git && \
     apt-get clean && \
     rm -rf /var/lib/apt/lists/*
 
-# Copy Pipfile and Pipfile.lock first (for better Docker layer caching)
-COPY Pipfile Pipfile.lock ./
+# Copy requirements first (for better Docker layer caching)
+COPY requirements.txt ./
 
-# Install Python dependencies using pipenv
-# --system installs packages to system python (not in virtual env)
-# --deploy ensures Pipfile.lock is up to date with Pipfile
-RUN pipenv install --system --deploy
+# Install Python dependencies
+RUN pip install --upgrade pip && \
+    pip install --no-cache-dir -r requirements.txt
 
 # Copy application code
 COPY . .
@@ -27,5 +30,4 @@ RUN chmod +x /app/django-entrypoint.sh
 ENV PYTHONUNBUFFERED=1
 ENV PYTHONDONTWRITEBYTECODE=1
 
-# Run the entrypoint script and then start the server
 CMD ["/app/django-entrypoint.sh"]
