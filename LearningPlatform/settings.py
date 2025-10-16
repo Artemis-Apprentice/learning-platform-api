@@ -195,7 +195,7 @@ LOGGING = {
             "level": "INFO",
         },
         # Make sure to replace the following logger's name for yours
-        "django_structlog_demo_project": {
+        "LearningAPI": {
             "handlers": ["console", "flat_line_file", "json_file"],
             "level": "INFO",
         },

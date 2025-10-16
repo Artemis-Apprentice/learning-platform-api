@@ -1,7 +1,7 @@
 from django.db.models import Count, Q
 import structlog # Add this import at the top of the file
 
-logger = structlog.get_logger(__name__) # Initialize the logger at the module level
+logger = structlog.get_logger("LearningAPI") # Initialize the logger at the module level
 from django.db import IntegrityError
 from django.http import HttpResponseServerError
 from rest_framework import serializers, status
@@ -59,7 +59,6 @@ class CohortViewSet(ViewSet):
                 start_date=str(cohort.start_date),
                 end_date=str(cohort.end_date),
                 created_by=request.auth.user.username if request.auth.user.is_authenticated else 'anonymous',
-                event="cohort_creation"
             )
 
             # Assign client side course
