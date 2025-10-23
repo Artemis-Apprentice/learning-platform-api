@@ -295,11 +295,24 @@ class StudentViewSet(ModelViewSet):
 
                 try:
                     tag = Tag.objects.get(name=combo['team'])
+                
                 except Tag.DoesNotExist:
                     tag = Tag.objects.create(name=combo['team'])
 
-                StudentTag.objects.create( student = student, tag = tag )
-
+                
+                try:
+                    StudentTag.objects.create( student = student, tag = tag )
+                    logger.info(
+                    "Team updated successfully",
+                    tag=tag.name, 
+                    moved_by=request.auth.user.username if request.auth.user.is_authenticated else 'anonymous',
+                    )
+                
+                except Exception as ex:
+                    logger.error(
+                        "Updating team failed",
+                        message=ex.args[0],
+                    )    
             return Response(None, status=status.HTTP_201_CREATED)
 
     @method_decorator(is_instructor())
