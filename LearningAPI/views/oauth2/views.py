@@ -1,3 +1,4 @@
+import structlog
 from __future__ import absolute_import
 
 from datetime import timedelta
@@ -27,7 +28,7 @@ from allauth.socialaccount.providers.oauth2.client import (
 )
 from allauth.utils import build_absolute_uri, get_request_param
 
-
+logger = structlog.get_logger("LearningAPI")
 class OAuth2Adapter(object):
     expires_in_key = "expires_in"
     client_class = OAuth2Client
@@ -91,6 +92,9 @@ class OAuth2View(object):
 
         if cohort is not None:
             callback_url = f'{callback_url}?cohort={cohort}'
+            logger.info(
+							f"Student in cohort {cohort} being redirected"
+						)
 
             if validate is not None:
                 callback_url = f'{callback_url}&validate={validate}'

@@ -1,6 +1,7 @@
 """Github Login module"""
 import os
 import urllib.parse
+import structlog
 
 from allauth.socialaccount.providers.github.views import GitHubOAuth2Adapter
 from allauth.socialaccount.providers.oauth2.client import OAuth2Client
@@ -8,7 +9,7 @@ from dj_rest_auth.registration.views import SocialLoginView
 from django.shortcuts import redirect
 from django.urls import reverse
 
-
+logger = structlog.get_logger("LearningAPI")
 class GithubLogin(SocialLoginView):
     """_summary_
 
@@ -31,4 +32,7 @@ class GithubLogin(SocialLoginView):
 def github_callback(request):
     callback = os.getenv("LEARNING_GITHUB_CALLBACK")
     params = urllib.parse.urlencode(request.GET)
+    logger.info(
+			"GitHub authentication successful; redirecting client"
+		)
     return redirect(f'{callback}?{params}')
