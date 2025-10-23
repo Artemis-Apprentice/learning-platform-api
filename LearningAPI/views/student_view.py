@@ -268,15 +268,15 @@ class StudentViewSet(ModelViewSet):
                     pk=int(request.data['projectId']))
                 student_project.save()
                 logger.info(
-                "Student moved successfully",
-                student_id=student_project.student.id, 
-                project=student_project.project.id, 
-                moved_by=request.auth.user.username if request.auth.user.is_authenticated else 'anonymous',
-            )
+                    "Student moved successfully",
+                    student_id=student_project.student.id, 
+                    project=student_project.project.id, 
+                    moved_by=request.auth.user.username if request.auth.user.is_authenticated else 'anonymous',
+                )
             except Exception as ex:
                 logger.error(
-                "Moving student failed",
-                message=ex.args[0],
+                    "Moving student failed",
+                    message=ex.args[0],
                 )
                 return Response({'message': ex.args[0]}, status=status.HTTP_500_INTERNAL_SERVER_ERROR)
 
