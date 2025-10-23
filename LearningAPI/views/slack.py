@@ -1,12 +1,13 @@
 """View module for handling requests about park areas"""
 import os
+import structlog 
 import requests
 from rest_framework import status
 from rest_framework.viewsets import ViewSet
 from rest_framework.response import Response
 from LearningAPI.models.people import NssUser
 
-
+logger = structlog.get_logger("LearningAPI") 
 class SlackChannel(ViewSet):
     """For creating Slack channels"""
 
@@ -30,6 +31,11 @@ class SlackChannel(ViewSet):
 
         res = requests.post("https://slack.com/api/conversations.create", timeout=10, data=channel_payload, headers=headers)
         channel_res = res.json()
+        
+        logger.info(
+            channel_name=request.data["name"],
+            students=student_slack_ids
+        )
 
         # Add students to Slack channel
         invitation_payload = {
@@ -40,6 +46,22 @@ class SlackChannel(ViewSet):
 
         res = requests.post("https://slack.com/api/conversations.invite", timeout=10, data=invitation_payload, headers=headers)
         students_res = res.json()
+        
+        if res.status_code == 200:
+            logger.info(
+                "slack_students_invited_successfully",
+                channel_name=request.data["name"],
+                channel_id=channel_res["channel"]["id"],
+                student_count=len(student_slack_ids)
+            )
+        else:
+            logger.warning(
+                "Slack Student Invitation Failed",
+                channel_name=request.data["name"],
+                channel_id=channel_res["channel"]["id"],
+                student_count=len(student_slack_ids),
+                error=students_res.get("error")
+            )
 
         combined_response = {
             "channel": channel_res,
