@@ -1,5 +1,6 @@
-import structlog
 from __future__ import absolute_import
+import structlog
+
 
 from datetime import timedelta
 from requests import RequestException
