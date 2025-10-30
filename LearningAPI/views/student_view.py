@@ -2,6 +2,7 @@
 import os
 import statistics
 import logging
+import structlog 
 
 import requests
 from django.db.models import Count, Q, Case, When
@@ -24,7 +25,7 @@ from LearningAPI.models.skill import (CoreSkillRecord, LearningRecord,
                                       LearningRecordEntry)
 from .personality import myers_briggs_persona
 
-
+logger = structlog.get_logger("LearningAPI") #
 class StudentPagination(PageNumberPagination):
     """Pagination for student resource"""
     page_size = 40
@@ -266,7 +267,17 @@ class StudentViewSet(ModelViewSet):
                 student_project.project = Project.objects.get(
                     pk=int(request.data['projectId']))
                 student_project.save()
+                logger.info(
+                    "Student moved successfully",
+                    student_id=student_project.student.id, 
+                    project=student_project.project.id, 
+                    moved_by=request.auth.user.username if request.auth.user.is_authenticated else 'anonymous',
+                )
             except Exception as ex:
+                logger.error(
+                    "Moving student failed",
+                    message=ex.args[0],
+                )
                 return Response({'message': ex.args[0]}, status=status.HTTP_500_INTERNAL_SERVER_ERROR)
 
             return Response({'message': 'Success'}, status=status.HTTP_201_CREATED)
@@ -284,11 +295,24 @@ class StudentViewSet(ModelViewSet):
 
                 try:
                     tag = Tag.objects.get(name=combo['team'])
+                
                 except Tag.DoesNotExist:
                     tag = Tag.objects.create(name=combo['team'])
 
-                StudentTag.objects.create( student = student, tag = tag )
-
+                
+                try:
+                    StudentTag.objects.create( student = student, tag = tag )
+                    logger.info(
+                    "Team updated successfully",
+                    tag=tag.name, 
+                    moved_by=request.auth.user.username if request.auth.user.is_authenticated else 'anonymous',
+                    )
+                
+                except Exception as ex:
+                    logger.error(
+                        "Updating team failed",
+                        message=ex.args[0],
+                    )    
             return Response(None, status=status.HTTP_201_CREATED)
 
     @method_decorator(is_instructor())

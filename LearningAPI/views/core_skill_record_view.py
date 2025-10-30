@@ -6,8 +6,9 @@ from rest_framework.response import Response
 from rest_framework.viewsets import ModelViewSet
 from LearningAPI.models.skill import CoreSkill, CoreSkillRecord, CoreSkillRecordEntry
 from LearningAPI.models.people import NssUser
+import structlog 
 
-
+logger = structlog.get_logger("LearningAPI") 
 class CoreSkillRecordViewSet(ModelViewSet):
     """
     A simple ViewSet for viewing and editing learning records.
@@ -69,15 +70,28 @@ class CoreSkillRecordViewSet(ModelViewSet):
             if request.auth.user.is_staff:
                 record.level = request.data["level"]
                 record.save()
+                logger.info(
+                    "Skill level successfully updated",
+                    record_level=record.level,
+                    skill_id=request.data["skill_id"],
+                    student_id=request.data["student_id"],
+                )
 
                 return Response(None, status=status.HTTP_204_NO_CONTENT)
             else:
                 return Response(None, status=status.HTTP_401_UNAUTHORIZED)
 
         except CoreSkillRecord.DoesNotExist:
+            logger.error(
+                f"Core skill record of {pk} could not be found",
+            )
             return Response(None, status=status.HTTP_404_NOT_FOUND)
 
         except Exception as ex:
+            logger.error(
+                "Skill update failed",
+                message=ex.args[0],
+            )
             return HttpResponseServerError(ex)
 
     def delete(self, request, pk=None):

@@ -199,6 +199,16 @@ LOGGING = {
             "handlers": ["console", "flat_line_file", "json_file"],
             "level": "INFO",
         },
+        "django.server": {
+            "handlers": ["console"],
+            "level": "WARNING",  # hide the "GET /..." spam
+            "propagate": False,
+        },
+        "django.request": {
+            "handlers": ["console"],
+            "level": "WARNING",  # only show actual errors
+            "propagate": False,
+        },
     }
 }
 
