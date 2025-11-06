@@ -2,7 +2,9 @@
 import os
 import statistics
 import logging
-import structlog 
+import structlog
+from prometheus_client import Counter, Histogram
+import time
 
 import requests
 from django.db.models import Count, Q, Case, When

@@ -14,6 +14,7 @@ dj-rest-auth==4.0.1
 django==4.2.25
 django-allauth==0.54.0
 django-cors-headers==4.9.0
+django-prometheus==2.3.1
 django-ipware==7.0.1; python_version >= '3.8'
 django-structlog==9.1.1
 djangorestframework==3.16.1
@@ -25,6 +26,7 @@ mccabe==0.7.0; python_version >= '3.6'
 oauthlib==3.3.1; python_version >= '3.8'
 packaging==25.0; python_version >= '3.8'
 platformdirs==4.4.0; python_version >= '3.9'
+prometheus-client==0.19.0
 psycopg2-binary==2.9.11
 pycodestyle==2.14.0; python_version >= '3.9'
 pycparser==2.23; implementation_name != 'PyPy'

@@ -36,6 +36,7 @@ APPEND_SLASH = False
 # Application definition
 
 INSTALLED_APPS = [
+		'django_prometheus',
     'django.contrib.admin',
     'django.contrib.auth',
     'django.contrib.contenttypes',
@@ -69,6 +70,7 @@ CORS_ORIGIN_WHITELIST = (
 )
 
 MIDDLEWARE = [
+	  'django_prometheus.middleware.PrometheusBeforeMiddleware', 
     'django.middleware.security.SecurityMiddleware',
     'django.contrib.sessions.middleware.SessionMiddleware',
     'corsheaders.middleware.CorsMiddleware',
@@ -78,6 +80,7 @@ MIDDLEWARE = [
     'django_structlog.middlewares.RequestMiddleware', # Added for structlog request context
     'django.contrib.messages.middleware.MessageMiddleware',
     'django.middleware.clickjacking.XFrameOptionsMiddleware',
+		'django_prometheus.middleware.PrometheusAfterMiddleware',
 ]
 
 REST_FRAMEWORK = {
