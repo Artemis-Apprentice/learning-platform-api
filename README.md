@@ -47,7 +47,7 @@ export LEARN_OPS_PORT=5432
 export LEARN_OPS_CLIENT_ID=GithubOAuthAppClientId
 export LEARN_OPS_SECRET_KEY=GithubOAuthAppSecret
 export LEARN_OPS_DJANGO_SECRET_KEY="GeneratedDjangoSecretKey"
-export LEARN_OPS_ALLOWED_HOSTS="127.0.0.1,localhost"
+export LEARN_OPS_ALLOWED_HOSTS="127.0.0.1,localhost,web"
 export LEARN_OPS_SUPERUSER_NAME=AdminUsernameOfYourChoice
 export LEARN_OPS_SUPERUSER_PASSWORD=AdminPasswordOfYourChoice
 ```

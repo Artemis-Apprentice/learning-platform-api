@@ -6,7 +6,21 @@ from rest_framework.response import Response
 from rest_framework.viewsets import ModelViewSet
 from LearningAPI.models.skill import CoreSkill, CoreSkillRecord, CoreSkillRecordEntry
 from LearningAPI.models.people import NssUser
+from prometheus_client import Counter, Histogram
+import time
 import structlog 
+
+core_skill_update_duration = Histogram(
+    'learning_api_core_skill_update_seconds',
+    'Time to update core skill level',
+    buckets=(0.05, 0.1, 0.25, 0.5, 1.0)
+)
+
+core_skill_update_total = Counter(
+    'learning_api_core_skill_update_total',
+    'Total core skill updates',
+    ['status']  # 'success' or 'error'
+)
 
 logger = structlog.get_logger("LearningAPI") 
 class CoreSkillRecordViewSet(ModelViewSet):
@@ -64,30 +78,45 @@ class CoreSkillRecordViewSet(ModelViewSet):
 
     def update(self, request, pk=None):
         """Handle PUT requests to update core skill level"""
+        start_time = time.time()
+
         try:
             record = CoreSkillRecord.objects.get(pk=pk)
-
+            
             if request.auth.user.is_staff:
                 record.level = request.data["level"]
                 record.save()
+                
+                # Record metrics
+                duration = time.time() - start_time
+                core_skill_update_duration.observe(duration)
+                core_skill_update_total.labels(status='success').inc()
+                
                 logger.info(
                     "Skill level successfully updated",
                     record_level=record.level,
                     skill_id=request.data["skill_id"],
                     student_id=request.data["student_id"],
                 )
-
                 return Response(None, status=status.HTTP_204_NO_CONTENT)
             else:
                 return Response(None, status=status.HTTP_401_UNAUTHORIZED)
 
         except CoreSkillRecord.DoesNotExist:
+            duration = time.time() - start_time
+            core_skill_update_duration.observe(duration)
+            core_skill_update_total.labels(status='error').inc()
+            
             logger.error(
                 f"Core skill record of {pk} could not be found",
             )
             return Response(None, status=status.HTTP_404_NOT_FOUND)
 
         except Exception as ex:
+            duration = time.time() - start_time
+            core_skill_update_duration.observe(duration)
+            core_skill_update_total.labels(status='error').inc()
+            
             logger.error(
                 "Skill update failed",
                 message=ex.args[0],

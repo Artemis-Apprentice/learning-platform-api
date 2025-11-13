@@ -5,6 +5,6 @@ try:
         sys.exit(1)
     
     password_hash = make_password(sys.argv[1])
- 
+    print(password_hash)
 except ImportError as e:
     sys.exit(1)

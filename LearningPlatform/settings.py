@@ -30,7 +30,7 @@ SECRET_KEY = os.getenv("LEARN_OPS_DJANGO_SECRET_KEY")
 DEBUG = os.getenv("DEBUG", "False")
 DEVELOPMENT_MODE = os.getenv("DEVELOPMENT_MODE", "False")
 ALLOWED_HOSTS = os.getenv(
-    "LEARN_OPS_ALLOWED_HOSTS", "learning.nss.team,learningapi.nss.team,127.0.0.1,localhost").split(",")
+    "LEARN_OPS_ALLOWED_HOSTS", "learning.nss.team,learningapi.nss.team,127.0.0.1,localhost,prometheus,web").split(",")
 APPEND_SLASH = False
 
 # Application definition
