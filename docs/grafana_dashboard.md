@@ -10,12 +10,11 @@ To get started with Grafana and connect it to your Prometheus instance:
 1.  **Access Grafana UI:** Open your web browser and navigate to `http://localhost:3001` (or the port you configured).
 2.  **Login:** Use the default credentials `admin`/`admin` (it's highly recommended to change these immediately).
 3.  **Add Prometheus Data Source:**
-    *   Click the **Gear icon** (Configuration) in the left sidebar.
+    *   Click the **Connections**  in the left sidebar.
     *   Select **"Data Sources"**.
     *   Click **"Add data source"**.
     *   Choose **"Prometheus"** from the list.
     *   In the "HTTP" section, set the **URL** to `http://prometheus:9090`.
-    *   Ensure "Access" is set to "Server (default)".
     *   Click **"Save & Test"**. You should see a "Data source is working" message.
 
 ## Creating a Dashboard and Adding Panels
@@ -35,10 +34,10 @@ Once your Prometheus data source is configured, you can start building your cust
         *   **Visualization:** Choose the appropriate visualization type (e.g., Graph, Stat, Gauge, Table).
         *   **Units:** Set the correct units for your metric (e.g., seconds, percent, bytes).
         *   **Legend:** Configure how the series names appear.
-    *   Click **"Apply"** to save the panel to your dashboard.
+    *   Click **"Save Dashboard"** to save the panel to your dashboard. Then click back to dashboard.
 
 3.  **Add More Panels:**
-    *   Click the **"+"** icon at the top of the dashboard to add more panels.
+    *   Click the **"Add"** icon at the top of the dashboard to add more panels and choose visualization if that is what you want to add.
     *   Repeat step 2 for each metric you want to visualize.
 
 4.  **Save the Dashboard:**
