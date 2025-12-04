@@ -2,7 +2,9 @@
 import os
 import statistics
 import logging
-import structlog 
+import structlog
+from prometheus_client import Counter, Histogram
+import time
 
 import requests
 from django.db.models import Count, Q, Case, When
@@ -25,6 +27,29 @@ from LearningAPI.models.skill import (CoreSkillRecord, LearningRecord,
                                       LearningRecordEntry)
 from .personality import myers_briggs_persona
 
+
+team_assignment_duration = Histogram(
+    'learning_api_team_assignment_seconds',
+    'Time to assign students to teams',
+    buckets=(0.1, 0.5, 1.0, 2.0, 5.0)
+)
+
+team_assignment_total = Counter(
+    'learning_api_team_assignment_total',
+    'Total team assignments',
+    ['status']  # 'success' or 'error'
+)
+student_project_move_duration = Histogram(
+    'learning_api_student_project_move_seconds',
+    'Time to move student to different project',
+    buckets=(0.1, 0.25, 0.5, 1.0, 2.5, 5.0)
+)
+
+student_project_move_total = Counter(
+    'learning_api_student_project_move_total',
+    'Total student project moves',
+    ['status']  # 'success' or 'error'
+)
 logger = structlog.get_logger("LearningAPI") #
 class StudentPagination(PageNumberPagination):
     """Pagination for student resource"""
@@ -259,60 +284,85 @@ class StudentViewSet(ModelViewSet):
     @action(methods=['post'], detail=True)
     def project(self, request, pk):
         """Add to the list of projects being worked on by student"""
-
+        
         if request.method == "POST":
+            start_time = time.time()
+            
             try:
                 student_project = StudentProject()
                 student_project.student = NssUser.objects.get(pk=pk)
                 student_project.project = Project.objects.get(
                     pk=int(request.data['projectId']))
                 student_project.save()
+                
+                # Record metrics
+                duration = time.time() - start_time
+                student_project_move_duration.observe(duration)
+                student_project_move_total.labels(status='success').inc()
+                
                 logger.info(
                     "Student moved successfully",
                     student_id=student_project.student.id, 
                     project=student_project.project.id, 
                     moved_by=request.auth.user.username if request.auth.user.is_authenticated else 'anonymous',
                 )
+                return Response({'message': 'Success'}, status=status.HTTP_201_CREATED)
+                
             except Exception as ex:
+                # Record failure
+                duration = time.time() - start_time
+                student_project_move_duration.observe(duration)
+                student_project_move_total.labels(status='error').inc()
+                
                 logger.error(
                     "Moving student failed",
                     message=ex.args[0],
                 )
                 return Response({'message': ex.args[0]}, status=status.HTTP_500_INTERNAL_SERVER_ERROR)
 
-            return Response({'message': 'Success'}, status=status.HTTP_201_CREATED)
-
     @method_decorator(is_instructor())
     @action(methods=['post'], detail=False)
     def teams(self, request):
         """Add/remove student tag for teams"""
-
+        
         if request.method == "POST":
+            start_time = time.time()
             combos = request.data.get('combos', None)
-
+            
             for combo in combos:
-                student = NssUser.objects.get(pk=combo['student'])
-
                 try:
-                    tag = Tag.objects.get(name=combo['team'])
+                    student = NssUser.objects.get(pk=combo['student'])
+                    
+                    try:
+                        tag = Tag.objects.get(name=combo['team'])
+                    except Tag.DoesNotExist:
+                        tag = Tag.objects.create(name=combo['team'])
+                    
+                    try:
+                        StudentTag.objects.create(student=student, tag=tag)
+                        team_assignment_total.labels(status='success').inc()
+                        
+                        logger.info(
+                            "Team updated successfully",
+                            tag=tag.name, 
+                            moved_by=request.auth.user.username if request.auth.user.is_authenticated else 'anonymous',
+                        )
+                    
+                    except Exception as ex:
+                        team_assignment_total.labels(status='error').inc()
+                        
+                        logger.error(
+                            "Updating team failed",
+                            message=ex.args[0],
+                        )
                 
-                except Tag.DoesNotExist:
-                    tag = Tag.objects.create(name=combo['team'])
-
-                
-                try:
-                    StudentTag.objects.create( student = student, tag = tag )
-                    logger.info(
-                    "Team updated successfully",
-                    tag=tag.name, 
-                    moved_by=request.auth.user.username if request.auth.user.is_authenticated else 'anonymous',
-                    )
-                
-                except Exception as ex:
-                    logger.error(
-                        "Updating team failed",
-                        message=ex.args[0],
-                    )    
+                except NssUser.DoesNotExist:
+                    team_assignment_total.labels(status='error').inc()
+            
+            # Record total duration for batch
+            duration = time.time() - start_time
+            team_assignment_duration.observe(duration)
+            
             return Response(None, status=status.HTTP_201_CREATED)
 
     @method_decorator(is_instructor())

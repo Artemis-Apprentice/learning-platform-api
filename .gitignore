@@ -31,3 +31,8 @@ context_portal/
 
 logs/
 
+
+.roo/
+.roomodes
+context_portal/
+memory-bank/

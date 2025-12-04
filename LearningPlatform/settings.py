@@ -30,12 +30,13 @@ SECRET_KEY = os.getenv("LEARN_OPS_DJANGO_SECRET_KEY")
 DEBUG = os.getenv("DEBUG", "False")
 DEVELOPMENT_MODE = os.getenv("DEVELOPMENT_MODE", "False")
 ALLOWED_HOSTS = os.getenv(
-    "LEARN_OPS_ALLOWED_HOSTS", "learning.nss.team,learningapi.nss.team,127.0.0.1,localhost").split(",")
+    "LEARN_OPS_ALLOWED_HOSTS", "learning.nss.team,learningapi.nss.team,127.0.0.1,localhost,prometheus,web").split(",")
 APPEND_SLASH = False
 
 # Application definition
 
 INSTALLED_APPS = [
+		'django_prometheus',
     'django.contrib.admin',
     'django.contrib.auth',
     'django.contrib.contenttypes',
@@ -69,6 +70,7 @@ CORS_ORIGIN_WHITELIST = (
 )
 
 MIDDLEWARE = [
+	  'django_prometheus.middleware.PrometheusBeforeMiddleware', 
     'django.middleware.security.SecurityMiddleware',
     'django.contrib.sessions.middleware.SessionMiddleware',
     'corsheaders.middleware.CorsMiddleware',
@@ -78,6 +80,7 @@ MIDDLEWARE = [
     'django_structlog.middlewares.RequestMiddleware', # Added for structlog request context
     'django.contrib.messages.middleware.MessageMiddleware',
     'django.middleware.clickjacking.XFrameOptionsMiddleware',
+		'django_prometheus.middleware.PrometheusAfterMiddleware',
 ]
 
 REST_FRAMEWORK = {
