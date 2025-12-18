@@ -4,6 +4,7 @@ import statistics
 import logging
 import structlog
 import time
+import psutil
 from prometheus_client import Counter, Histogram
 
 import requests
@@ -50,7 +51,63 @@ student_project_move_total = Counter(
     'Total student project moves',
     ['status']  # 'success' or 'error'
 )
+
+# ORM Query Resource Monitoring Metrics
+orm_query_cpu_usage = Histogram(
+    'learning_api_orm_query_cpu_percent',
+    'CPU usage percentage during ORM queries',
+    ['query_type'],
+    buckets=(0.1, 0.5, 1.0, 2.0, 5.0, 10.0, 20.0)
+)
+
+orm_query_memory_usage = Histogram(
+    'learning_api_orm_query_memory_mb',
+    'Memory usage in MB during ORM queries',
+    ['query_type'],
+    buckets=(1, 5, 10, 25, 50, 100, 250, 500)
+)
+
+orm_query_total = Counter(
+    'learning_api_orm_query_total',
+    'Total ORM queries executed',
+    ['query_type', 'status']
+)
+
 logger = structlog.get_logger(__name__)
+
+
+class ORMQueryMonitor:
+    """Context manager to monitor CPU and memory usage for ORM queries"""
+    
+    def __init__(self, query_type: str):
+        self.query_type = query_type
+        self.process = psutil.Process(os.getpid())
+        self.start_cpu = None
+        self.start_memory = None
+        
+    def __enter__(self):
+        # Record starting metrics
+        self.start_cpu = self.process.cpu_percent()
+        self.start_memory = self.process.memory_info().rss / 1024 / 1024  # Convert to MB
+        return self
+        
+    def __exit__(self, exc_type, exc_val, exc_tb):
+        # Calculate resource usage
+        end_cpu = self.process.cpu_percent()
+        end_memory = self.process.memory_info().rss / 1024 / 1024  # MB
+        
+        cpu_used = end_cpu - self.start_cpu
+        memory_used = end_memory - self.start_memory
+        
+        # Record metrics
+        orm_query_cpu_usage.labels(query_type=self.query_type).observe(cpu_used)
+        orm_query_memory_usage.labels(query_type=self.query_type).observe(abs(memory_used))
+        
+        # Record success/failure
+        status = 'error' if exc_type else 'success'
+        orm_query_total.labels(query_type=self.query_type, status=status).inc()
+
+
 class StudentPagination(PageNumberPagination):
     """Pagination for student resource"""
     page_size = 40
@@ -176,16 +233,18 @@ class StudentViewSet(ModelViewSet):
 
         if student_status == "unassigned":
             start_unassigned_query = time.time()
-            students = NssUser.objects.\
-                annotate(cohort_count=Count('assigned_cohorts')).\
-                filter(user__is_staff=False,
-                       user__is_active=True, cohort_count=0)
+            with ORMQueryMonitor('nssuser_unassigned'):
+                students = NssUser.objects.\
+                    annotate(cohort_count=Count('assigned_cohorts')).\
+                    filter(user__is_staff=False,
+                           user__is_active=True, cohort_count=0)
             duration_unassigned_query = time.time() - start_unassigned_query
             logger.debug(f"list_method: NssUser unassigned query took {duration_unassigned_query:.4f} seconds")
         else:
             start_initial_query = time.time()
-            students = NssUser.objects.filter(
-                user__is_active=True, user__is_staff=False)
+            with ORMQueryMonitor('nssuser_initial_filter'):
+                students = NssUser.objects.filter(
+                    user__is_active=True, user__is_staff=False)
             duration_initial_query = time.time() - start_initial_query
             logger.debug(f"list_method: NssUser initial query took {duration_initial_query:.4f} seconds")
 
@@ -194,11 +253,12 @@ class StudentViewSet(ModelViewSet):
 
         if search_terms is not None:
             start_search_query = time.time()
-            for letter in list(search_terms):
-                students = students.filter(
-                    Q(user__first_name__icontains=letter)
-                    | Q(user__last_name__icontains=letter)
-                )
+            with ORMQueryMonitor('nssuser_search_filter'):
+                for letter in list(search_terms):
+                    students = students.filter(
+                        Q(user__first_name__icontains=letter)
+                        | Q(user__last_name__icontains=letter)
+                    )
             duration_search_query = time.time() - start_search_query
             logger.debug(f"list_method: NssUser search query took {duration_search_query:.4f} seconds")
 
@@ -211,12 +271,14 @@ class StudentViewSet(ModelViewSet):
 
         if cohort is not None:
             start_cohort_filter_get = time.time()
-            cohort_filter = Cohort.objects.get(pk=cohort)
+            with ORMQueryMonitor('cohort_get'):
+                cohort_filter = Cohort.objects.get(pk=cohort)
             duration_cohort_filter_get = time.time() - start_cohort_filter_get
             logger.debug(f"list_method: Cohort.objects.get took {duration_cohort_filter_get:.4f} seconds")
 
             start_cohort_students_filter = time.time()
-            students = students.filter(assigned_cohorts__cohort=cohort_filter)
+            with ORMQueryMonitor('nssuser_cohort_filter'):
+                students = students.filter(assigned_cohorts__cohort=cohort_filter)
             duration_cohort_students_filter = time.time() - start_cohort_students_filter
             logger.debug(f"list_method: NssUser cohort filter took {duration_cohort_students_filter:.4f} seconds")
 
@@ -224,18 +286,20 @@ class StudentViewSet(ModelViewSet):
             for student in students:
                 start_personality_get_or_create = time.time()
                 try:
-                    personality = StudentPersonality.objects.get(student=student)
+                    with ORMQueryMonitor('student_personality_get'):
+                        personality = StudentPersonality.objects.get(student=student)
                     logger.debug(f"list_method: StudentPersonality.objects.get for student {student.id} took {time.time() - start_personality_get_or_create:.4f} seconds")
                 except StudentPersonality.DoesNotExist:
-                    personality = StudentPersonality()
-                    personality.briggs_myers_type = ""
-                    personality.bfi_extraversion = 0
-                    personality.bfi_agreeableness = 0
-                    personality.bfi_conscientiousness = 0
-                    personality.bfi_neuroticism = 0
-                    personality.bfi_openness = 0
-                    personality.student = student
-                    personality.save()
+                    with ORMQueryMonitor('student_personality_create'):
+                        personality = StudentPersonality()
+                        personality.briggs_myers_type = ""
+                        personality.bfi_extraversion = 0
+                        personality.bfi_agreeableness = 0
+                        personality.bfi_conscientiousness = 0
+                        personality.bfi_neuroticism = 0
+                        personality.bfi_openness = 0
+                        personality.student = student
+                        personality.save()
                     logger.debug(f"list_method: StudentPersonality.objects.create for student {student.id} took {time.time() - start_personality_get_or_create:.4f} seconds")
 
             start_micro_students_serializer_data = time.time()
@@ -494,9 +558,10 @@ def student_score(obj):
     # First get the total of the student's technical objectives
     total = 0
     start_learning_record_query = time.time()
-    scores = LearningRecord.objects.\
-        filter(student=obj, achieved=True).\
-        order_by("-id")
+    with ORMQueryMonitor('learning_record_filter'):
+        scores = LearningRecord.objects.\
+            filter(student=obj, achieved=True).\
+            order_by("-id")
     duration_learning_record_query = time.time() - start_learning_record_query
     logger.debug(f"student_score: LearningRecord query took {duration_learning_record_query:.4f} seconds")
 
@@ -506,8 +571,9 @@ def student_score(obj):
     # Get the average of the core skills' levels and adjust the
     # technical score positively by the percent
     start_core_skill_record_query = time.time()
-    core_skill_records = CoreSkillRecord.objects.filter(
-        student=obj).order_by("pk")
+    with ORMQueryMonitor('core_skill_record_filter'):
+        core_skill_records = CoreSkillRecord.objects.filter(
+            student=obj).order_by("pk")
     duration_core_skill_record_query = time.time() - start_core_skill_record_query
     logger.debug(f"student_score: CoreSkillRecord query took {duration_core_skill_record_query:.4f} seconds")
     scores = [record.level for record in core_skill_records]
@@ -611,8 +677,9 @@ class StudentSerializer(serializers.ModelSerializer):
 
     def get_records(self, obj):
         start_get_records = time.time()
-        records = LearningRecord.objects.filter(
-            student=obj).order_by("achieved")
+        with ORMQueryMonitor('learning_record_serializer'):
+            records = LearningRecord.objects.filter(
+                student=obj).order_by("achieved")
         duration_get_records = time.time() - start_get_records
         logger.debug(f"StudentSerializer: LearningRecord filter in get_records took {duration_get_records:.4f} seconds")
         
@@ -624,7 +691,8 @@ class StudentSerializer(serializers.ModelSerializer):
 
     def get_core_skill_records(self, obj):
         start_get_core_skill_records = time.time()
-        records = CoreSkillRecord.objects.filter(student=obj).order_by("pk")
+        with ORMQueryMonitor('core_skill_record_serializer'):
+            records = CoreSkillRecord.objects.filter(student=obj).order_by("pk")
         duration_get_core_skill_records = time.time() - start_get_core_skill_records
         logger.debug(f"StudentSerializer: CoreSkillRecord filter in get_core_skill_records took {duration_get_core_skill_records:.4f} seconds")
 
@@ -636,7 +704,8 @@ class StudentSerializer(serializers.ModelSerializer):
 
     def get_github(self, obj):
         start_get_github = time.time()
-        github = obj.user.socialaccount_set.get(user=obj.user)
+        with ORMQueryMonitor('socialaccount_get'):
+            github = obj.user.socialaccount_set.get(user=obj.user)
         duration_get_github = time.time() - start_get_github
         logger.debug(f"StudentSerializer: socialaccount_set.get in get_github took {duration_get_github:.4f} seconds")
         return github.extra_data["login"]
@@ -684,7 +753,8 @@ class MicroStudents(serializers.ModelSerializer):
 
     def get_github(self, obj):
         start_get_github = time.time()
-        github = obj.user.socialaccount_set.get(user=obj.user)
+        with ORMQueryMonitor('socialaccount_get_micro'):
+            github = obj.user.socialaccount_set.get(user=obj.user)
         duration_get_github = time.time() - start_get_github
         logger.debug(f"MicroStudents: socialaccount_set.get in get_github took {duration_get_github:.4f} seconds")
         return github.extra_data["login"]
@@ -692,7 +762,8 @@ class MicroStudents(serializers.ModelSerializer):
     def get_assessment_status(self, obj):
         start_get_assessment_status = time.time()
         start_student_project_filter = time.time()
-        student_project = StudentProject.objects.filter(student=obj).last()
+        with ORMQueryMonitor('student_project_filter'):
+            student_project = StudentProject.objects.filter(student=obj).last()
         duration_student_project_filter = time.time() - start_student_project_filter
         logger.debug(f"MicroStudents: StudentProject filter in get_assessment_status took {duration_student_project_filter:.4f} seconds")
 
@@ -704,15 +775,16 @@ class MicroStudents(serializers.ModelSerializer):
 
             try:
                 start_student_assessment_query = time.time()
-                student_assessment = StudentAssessment.objects.annotate(assessment_status=Case(
-                        When(status__status="In Progress", then=1),
-                        When(status__status="Ready for Review", then=2),
-                        When(status__status="Reviewed and Incomplete", then=3),
-                        When(status__status="Reviewed and Complete", then=4),
-                        default=0,
-                        output_field=IntegerField()
-                    ))\
-                    .get(assessment__book=book, student=obj)
+                with ORMQueryMonitor('student_assessment_annotate'):
+                    student_assessment = StudentAssessment.objects.annotate(assessment_status=Case(
+                            When(status__status="In Progress", then=1),
+                            When(status__status="Ready for Review", then=2),
+                            When(status__status="Reviewed and Incomplete", then=3),
+                            When(status__status="Reviewed and Complete", then=4),
+                            default=0,
+                            output_field=IntegerField()
+                        ))\
+                        .get(assessment__book=book, student=obj)
                 duration_student_assessment_query = time.time() - start_student_assessment_query
                 logger.debug(f"MicroStudents: StudentAssessment query in get_assessment_status took {duration_student_assessment_query:.4f} seconds")
 
@@ -733,18 +805,21 @@ class MicroStudents(serializers.ModelSerializer):
     def get_book(self, obj):
         start_get_book = time.time()
         start_student_project_filter = time.time()
-        student_project = StudentProject.objects.filter(student=obj).last()
+        with ORMQueryMonitor('student_project_filter_book'):
+            student_project = StudentProject.objects.filter(student=obj).last()
         duration_student_project_filter = time.time() - start_student_project_filter
         logger.debug(f"MicroStudents: StudentProject filter in get_book took {duration_student_project_filter:.4f} seconds")
 
         if student_project is None:
             start_cohort_course_get = time.time()
-            cohort_course = CohortCourse.objects.get(cohort__id=obj.cohorts[0]['id'], index=0)
+            with ORMQueryMonitor('cohort_course_get'):
+                cohort_course = CohortCourse.objects.get(cohort__id=obj.cohorts[0]['id'], index=0)
             duration_cohort_course_get = time.time() - start_cohort_course_get
             logger.debug(f"MicroStudents: CohortCourse get in get_book took {duration_cohort_course_get:.4f} seconds")
 
             start_project_get = time.time()
-            project = Project.objects.get(book__course=cohort_course.course, book__index=0, index=0)
+            with ORMQueryMonitor('project_get'):
+                project = Project.objects.get(book__course=cohort_course.course, book__index=0, index=0)
             duration_project_get = time.time() - start_project_get
             logger.debug(f"MicroStudents: Project get in get_book took {duration_project_get:.4f} seconds")
 
@@ -757,12 +832,14 @@ class MicroStudents(serializers.ModelSerializer):
         book_data = {}
         if student_project is None:
             start_cohort_course_get = time.time()
-            cohort_course = CohortCourse.objects.get(cohort__id=obj.cohorts[0]['id'], index=0)
+            with ORMQueryMonitor('cohort_course_get_duplicate'):
+                cohort_course = CohortCourse.objects.get(cohort__id=obj.cohorts[0]['id'], index=0)
             duration_cohort_course_get = time.time() - start_cohort_course_get
             logger.debug(f"MicroStudents: CohortCourse get in get_book took {duration_cohort_course_get:.4f} seconds")
 
             start_project_get = time.time()
-            project = Project.objects.get(book__course=cohort_course.course, book__index=0, index=0)
+            with ORMQueryMonitor('project_get_duplicate'):
+                project = Project.objects.get(book__course=cohort_course.course, book__index=0, index=0)
             duration_project_get = time.time() - start_project_get
             logger.debug(f"MicroStudents: Project get in get_book took {duration_project_get:.4f} seconds")
 
@@ -787,17 +864,18 @@ class MicroStudents(serializers.ModelSerializer):
         start_get_proposals = time.time()
         # Three stages - "submitted", "reviewed", "approved"
         start_capstone_query = time.time()
-        proposals = Capstone.objects.filter(student=obj).annotate(
-            status_count=Count("statuses"),
-            approved=Count(
-                'statuses',
-                filter=Q(statuses__status__status="Approved")
-            ),
-            mvp=Count(
-                'statuses',
-                filter=Q(statuses__status__status="MVP")
-            )
-        ).order_by("pk")
+        with ORMQueryMonitor('capstone_annotate'):
+            proposals = Capstone.objects.filter(student=obj).annotate(
+                status_count=Count("statuses"),
+                approved=Count(
+                    'statuses',
+                    filter=Q(statuses__status__status="Approved")
+                ),
+                mvp=Count(
+                    'statuses',
+                    filter=Q(statuses__status__status="MVP")
+                )
+            ).order_by("pk")
         duration_capstone_query = time.time() - start_capstone_query
         logger.debug(f"MicroStudents: Capstone query in get_proposals took {duration_capstone_query:.4f} seconds")
 
@@ -877,14 +955,16 @@ class SingleStudent(serializers.ModelSerializer):
 
     def get_github(self, obj):
         start_get_github = time.time()
-        github = obj.user.socialaccount_set.get(user=obj.user)
+        with ORMQueryMonitor('socialaccount_get_single'):
+            github = obj.user.socialaccount_set.get(user=obj.user)
         duration_get_github = time.time() - start_get_github
         logger.debug(f"SingleStudent: socialaccount_set.get in get_github took {duration_get_github:.4f} seconds")
         return github.extra_data["login"]
 
     def get_repos(self, obj):
         start_get_repos = time.time()
-        github = obj.user.socialaccount_set.get(user=obj.user)
+        with ORMQueryMonitor('socialaccount_get_repos'):
+            github = obj.user.socialaccount_set.get(user=obj.user)
         duration_get_repos = time.time() - start_get_repos
         logger.debug(f"SingleStudent: socialaccount_set.get in get_repos took {duration_get_repos:.4f} seconds")
         return github.extra_data["repos_url"]
