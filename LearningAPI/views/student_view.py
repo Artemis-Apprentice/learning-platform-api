@@ -3,8 +3,8 @@ import os
 import statistics
 import logging
 import structlog
-from prometheus_client import Counter, Histogram
 import time
+from prometheus_client import Counter, Histogram
 
 import requests
 from django.db.models import Count, Q, Case, When
@@ -50,7 +50,7 @@ student_project_move_total = Counter(
     'Total student project moves',
     ['status']  # 'success' or 'error'
 )
-logger = structlog.get_logger("LearningAPI") #
+logger = structlog.get_logger(__name__)
 class StudentPagination(PageNumberPagination):
     """Pagination for student resource"""
     page_size = 40
@@ -165,41 +165,67 @@ class StudentViewSet(ModelViewSet):
         """Handle GET requests for all students
 
         Returns:
-            Response -- JSON serialized array
+            Response -- JSON serialized array with query timings
         """
+        start_list_method = time.time()
         student_status = self.request.query_params.get('status', None)
         cohort = self.request.query_params.get('cohort', None)
         search_terms = self.request.query_params.get('q', None)
 
+        students = NssUser.objects.none() # Initialize an empty queryset
+
         if student_status == "unassigned":
+            start_unassigned_query = time.time()
             students = NssUser.objects.\
                 annotate(cohort_count=Count('assigned_cohorts')).\
                 filter(user__is_staff=False,
                        user__is_active=True, cohort_count=0)
+            duration_unassigned_query = time.time() - start_unassigned_query
+            logger.debug(f"list_method: NssUser unassigned query took {duration_unassigned_query:.4f} seconds")
         else:
+            start_initial_query = time.time()
             students = NssUser.objects.filter(
                 user__is_active=True, user__is_staff=False)
+            duration_initial_query = time.time() - start_initial_query
+            logger.debug(f"list_method: NssUser initial query took {duration_initial_query:.4f} seconds")
 
-        serializer = SingleStudent(students, many=True)
+        # Define `serializer_data` to ensure it's always available for pagination
+        serializer_data = []
 
         if search_terms is not None:
+            start_search_query = time.time()
             for letter in list(search_terms):
                 students = students.filter(
                     Q(user__first_name__icontains=letter)
                     | Q(user__last_name__icontains=letter)
                 )
+            duration_search_query = time.time() - start_search_query
+            logger.debug(f"list_method: NssUser search query took {duration_search_query:.4f} seconds")
 
-            serializer = SingleStudent(students, many=True)
-            return Response(serializer.data, status=status.HTTP_200_OK)
+            start_single_student_serializer_data = time.time()
+            serializer_data = SingleStudent(students, many=True).data
+            duration_single_student_serializer_data = time.time() - start_single_student_serializer_data
+            logger.debug(f"list_method: SingleStudent serializer.data for search took {duration_single_student_serializer_data:.4f} seconds")
+            
+            return Response(serializer_data, status=status.HTTP_200_OK)
 
         if cohort is not None:
+            start_cohort_filter_get = time.time()
             cohort_filter = Cohort.objects.get(pk=cohort)
-            students = students.filter(assigned_cohorts__cohort=cohort_filter)
+            duration_cohort_filter_get = time.time() - start_cohort_filter_get
+            logger.debug(f"list_method: Cohort.objects.get took {duration_cohort_filter_get:.4f} seconds")
 
+            start_cohort_students_filter = time.time()
+            students = students.filter(assigned_cohorts__cohort=cohort_filter)
+            duration_cohort_students_filter = time.time() - start_cohort_students_filter
+            logger.debug(f"list_method: NssUser cohort filter took {duration_cohort_students_filter:.4f} seconds")
+
+            # This loop can lead to N+1 queries. Consider prefetching or select_related if performance is an issue.
             for student in students:
+                start_personality_get_or_create = time.time()
                 try:
                     personality = StudentPersonality.objects.get(student=student)
-
+                    logger.debug(f"list_method: StudentPersonality.objects.get for student {student.id} took {time.time() - start_personality_get_or_create:.4f} seconds")
                 except StudentPersonality.DoesNotExist:
                     personality = StudentPersonality()
                     personality.briggs_myers_type = ""
@@ -210,11 +236,34 @@ class StudentViewSet(ModelViewSet):
                     personality.bfi_openness = 0
                     personality.student = student
                     personality.save()
+                    logger.debug(f"list_method: StudentPersonality.objects.create for student {student.id} took {time.time() - start_personality_get_or_create:.4f} seconds")
 
-            serializer = MicroStudents(students, many=True)
+            start_micro_students_serializer_data = time.time()
+            serializer_data = MicroStudents(students, many=True).data
+            duration_micro_students_serializer_data = time.time() - start_micro_students_serializer_data
+            logger.debug(f"list_method: MicroStudents serializer.data for cohort took {duration_micro_students_serializer_data:.4f} seconds")
+            
+            # Use the data directly for pagination
+            page = self.paginate_queryset(serializer_data)
+            paginated_response = self.get_paginated_response(page)
 
-        page = self.paginate_queryset(serializer.data)
+            end_list_method = time.time()
+            total_list_method_duration = end_list_method - start_list_method
+            logger.info(f"list_method: Total execution of list method took {total_list_method_duration:.4f} seconds")
+            return paginated_response
+
+        # If no search terms or cohort filter, proceed with initial serializer
+        start_single_student_serializer_data_default = time.time()
+        serializer_data = SingleStudent(students, many=True).data # Access .data here to trigger serialization and query execution
+        duration_single_student_serializer_data_default = time.time() - start_single_student_serializer_data_default
+        logger.debug(f"list_method: SingleStudent serializer.data (default) took {duration_single_student_serializer_data_default:.4f} seconds")
+
+        page = self.paginate_queryset(serializer_data)
         paginated_response = self.get_paginated_response(page)
+
+        end_list_method = time.time()
+        total_list_method_duration = end_list_method - start_list_method
+        logger.info(f"list_method: Total execution of list method took {total_list_method_duration:.4f} seconds")
         return paginated_response
 
     @method_decorator(is_instructor())
@@ -440,20 +489,27 @@ class StudentViewSet(ModelViewSet):
 
 def student_score(obj):
     """Return total learning score"""
+    start_student_score = time.time()
 
     # First get the total of the student's technical objectives
     total = 0
+    start_learning_record_query = time.time()
     scores = LearningRecord.objects.\
         filter(student=obj, achieved=True).\
         order_by("-id")
+    duration_learning_record_query = time.time() - start_learning_record_query
+    logger.debug(f"student_score: LearningRecord query took {duration_learning_record_query:.4f} seconds")
 
     for score in scores:
         total += score.weight.weight
 
     # Get the average of the core skills' levels and adjust the
     # technical score positively by the percent
+    start_core_skill_record_query = time.time()
     core_skill_records = CoreSkillRecord.objects.filter(
         student=obj).order_by("pk")
+    duration_core_skill_record_query = time.time() - start_core_skill_record_query
+    logger.debug(f"student_score: CoreSkillRecord query took {duration_core_skill_record_query:.4f} seconds")
     scores = [record.level for record in core_skill_records]
 
     try:
@@ -465,6 +521,9 @@ def student_score(obj):
     except statistics.StatisticsError:
         pass
 
+    end_student_score = time.time()
+    total_student_score_duration = end_student_score - start_student_score
+    logger.debug(f"student_score: Total execution of student_score function took {total_student_score_duration:.4f} seconds")
     return total
 
 
@@ -544,19 +603,42 @@ class StudentSerializer(serializers.ModelSerializer):
     personality = PersonalitySerializer(many=False)
 
     def get_score(self, obj):
-        return student_score(obj)
+        start_get_score = time.time()
+        score = student_score(obj)
+        duration_get_score = time.time() - start_get_score
+        logger.debug(f"StudentSerializer: get_score took {duration_get_score:.4f} seconds")
+        return score
 
     def get_records(self, obj):
+        start_get_records = time.time()
         records = LearningRecord.objects.filter(
             student=obj).order_by("achieved")
-        return LearningRecordSerializer(records, many=True).data
+        duration_get_records = time.time() - start_get_records
+        logger.debug(f"StudentSerializer: LearningRecord filter in get_records took {duration_get_records:.4f} seconds")
+        
+        start_serializer = time.time()
+        serialized_data = LearningRecordSerializer(records, many=True).data
+        duration_serializer = time.time() - start_serializer
+        logger.debug(f"StudentSerializer: LearningRecordSerializer in get_records took {duration_serializer:.4f} seconds")
+        return serialized_data
 
     def get_core_skill_records(self, obj):
+        start_get_core_skill_records = time.time()
         records = CoreSkillRecord.objects.filter(student=obj).order_by("pk")
-        return CoreSkillRecordSerializer(records, many=True).data
+        duration_get_core_skill_records = time.time() - start_get_core_skill_records
+        logger.debug(f"StudentSerializer: CoreSkillRecord filter in get_core_skill_records took {duration_get_core_skill_records:.4f} seconds")
+
+        start_serializer = time.time()
+        serialized_data = CoreSkillRecordSerializer(records, many=True).data
+        duration_serializer = time.time() - start_serializer
+        logger.debug(f"StudentSerializer: CoreSkillRecordSerializer in get_core_skill_records took {duration_serializer:.4f} seconds")
+        return serialized_data
 
     def get_github(self, obj):
+        start_get_github = time.time()
         github = obj.user.socialaccount_set.get(user=obj.user)
+        duration_get_github = time.time() - start_get_github
+        logger.debug(f"StudentSerializer: socialaccount_set.get in get_github took {duration_get_github:.4f} seconds")
         return github.extra_data["login"]
 
     def get_name(self, obj):
@@ -601,11 +683,18 @@ class MicroStudents(serializers.ModelSerializer):
     archetype = serializers.SerializerMethodField()
 
     def get_github(self, obj):
+        start_get_github = time.time()
         github = obj.user.socialaccount_set.get(user=obj.user)
+        duration_get_github = time.time() - start_get_github
+        logger.debug(f"MicroStudents: socialaccount_set.get in get_github took {duration_get_github:.4f} seconds")
         return github.extra_data["login"]
 
     def get_assessment_status(self, obj):
+        start_get_assessment_status = time.time()
+        start_student_project_filter = time.time()
         student_project = StudentProject.objects.filter(student=obj).last()
+        duration_student_project_filter = time.time() - start_student_project_filter
+        logger.debug(f"MicroStudents: StudentProject filter in get_assessment_status took {duration_student_project_filter:.4f} seconds")
 
         if student_project is not None:
             book = student_project.project.book
@@ -614,6 +703,7 @@ class MicroStudents(serializers.ModelSerializer):
             assessment_status = 0
 
             try:
+                start_student_assessment_query = time.time()
                 student_assessment = StudentAssessment.objects.annotate(assessment_status=Case(
                         When(status__status="In Progress", then=1),
                         When(status__status="Ready for Review", then=2),
@@ -623,21 +713,40 @@ class MicroStudents(serializers.ModelSerializer):
                         output_field=IntegerField()
                     ))\
                     .get(assessment__book=book, student=obj)
+                duration_student_assessment_query = time.time() - start_student_assessment_query
+                logger.debug(f"MicroStudents: StudentAssessment query in get_assessment_status took {duration_student_assessment_query:.4f} seconds")
 
                 assessment_status = student_assessment.assessment_status
             except StudentAssessment.DoesNotExist:
                 assessment_status = 0
-
+            
+            end_get_assessment_status = time.time()
+            total_get_assessment_status_duration = end_get_assessment_status - start_get_assessment_status
+            logger.debug(f"MicroStudents: Total get_assessment_status took {total_get_assessment_status_duration:.4f} seconds")
             return assessment_status
         else:
+            end_get_assessment_status = time.time()
+            total_get_assessment_status_duration = end_get_assessment_status - start_get_assessment_status
+            logger.debug(f"MicroStudents: Total get_assessment_status (no student project) took {total_get_assessment_status_duration:.4f} seconds")
             return 0
 
     def get_book(self, obj):
+        start_get_book = time.time()
+        start_student_project_filter = time.time()
         student_project = StudentProject.objects.filter(student=obj).last()
+        duration_student_project_filter = time.time() - start_student_project_filter
+        logger.debug(f"MicroStudents: StudentProject filter in get_book took {duration_student_project_filter:.4f} seconds")
 
         if student_project is None:
+            start_cohort_course_get = time.time()
             cohort_course = CohortCourse.objects.get(cohort__id=obj.cohorts[0]['id'], index=0)
+            duration_cohort_course_get = time.time() - start_cohort_course_get
+            logger.debug(f"MicroStudents: CohortCourse get in get_book took {duration_cohort_course_get:.4f} seconds")
+
+            start_project_get = time.time()
             project = Project.objects.get(book__course=cohort_course.course, book__index=0, index=0)
+            duration_project_get = time.time() - start_project_get
+            logger.debug(f"MicroStudents: Project get in get_book took {duration_project_get:.4f} seconds")
 
             return {
                 "id": project.book.id,
@@ -645,14 +754,39 @@ class MicroStudents(serializers.ModelSerializer):
                 "project": project.name
             }
 
-        return {
-            "id": student_project.project.book.id,
-            "name": student_project.project.book.name,
-            "project": student_project.project.name
-        }
+        book_data = {}
+        if student_project is None:
+            start_cohort_course_get = time.time()
+            cohort_course = CohortCourse.objects.get(cohort__id=obj.cohorts[0]['id'], index=0)
+            duration_cohort_course_get = time.time() - start_cohort_course_get
+            logger.debug(f"MicroStudents: CohortCourse get in get_book took {duration_cohort_course_get:.4f} seconds")
+
+            start_project_get = time.time()
+            project = Project.objects.get(book__course=cohort_course.course, book__index=0, index=0)
+            duration_project_get = time.time() - start_project_get
+            logger.debug(f"MicroStudents: Project get in get_book took {duration_project_get:.4f} seconds")
+
+            book_data = {
+                "id": project.book.id,
+                "name": project.book.name,
+                "project": project.name
+            }
+        else:
+            book_data = {
+                "id": student_project.project.book.id,
+                "name": student_project.project.book.name,
+                "project": student_project.project.name
+            }
+        
+        end_get_book = time.time()
+        total_get_book_duration = end_get_book - start_get_book
+        logger.debug(f"MicroStudents: Total get_book took {total_get_book_duration:.4f} seconds")
+        return book_data
 
     def get_proposals(self, obj):
+        start_get_proposals = time.time()
         # Three stages - "submitted", "reviewed", "approved"
+        start_capstone_query = time.time()
         proposals = Capstone.objects.filter(student=obj).annotate(
             status_count=Count("statuses"),
             approved=Count(
@@ -664,6 +798,8 @@ class MicroStudents(serializers.ModelSerializer):
                 filter=Q(statuses__status__status="MVP")
             )
         ).order_by("pk")
+        duration_capstone_query = time.time() - start_capstone_query
+        logger.debug(f"MicroStudents: Capstone query in get_proposals took {duration_capstone_query:.4f} seconds")
 
         proposal_statuses = []
 
@@ -685,10 +821,17 @@ class MicroStudents(serializers.ModelSerializer):
                 "status": proposal_status
             })
 
+        end_get_proposals = time.time()
+        total_get_proposals_duration = end_get_proposals - start_get_proposals
+        logger.debug(f"MicroStudents: Total get_proposals took {total_get_proposals_duration:.4f} seconds")
         return proposal_statuses
 
     def get_score(self, obj):
-        return student_score(obj)
+        start_get_score = time.time()
+        score = student_score(obj)
+        duration_get_score = time.time() - start_get_score
+        logger.debug(f"MicroStudents: get_score took {duration_get_score:.4f} seconds")
+        return score
 
     def get_archetype(self, obj):
         if obj.personality.briggs_myers_type != '':
@@ -723,17 +866,27 @@ class SingleStudent(serializers.ModelSerializer):
         return obj.user.date_joined
 
     def get_score(self, obj):
-        return student_score(obj)
+        start_get_score = time.time()
+        score = student_score(obj)
+        duration_get_score = time.time() - start_get_score
+        logger.debug(f"SingleStudent: get_score took {duration_get_score:.4f} seconds")
+        return score
 
     def get_staff(self, obj):
         return False
 
     def get_github(self, obj):
+        start_get_github = time.time()
         github = obj.user.socialaccount_set.get(user=obj.user)
+        duration_get_github = time.time() - start_get_github
+        logger.debug(f"SingleStudent: socialaccount_set.get in get_github took {duration_get_github:.4f} seconds")
         return github.extra_data["login"]
 
     def get_repos(self, obj):
+        start_get_repos = time.time()
         github = obj.user.socialaccount_set.get(user=obj.user)
+        duration_get_repos = time.time() - start_get_repos
+        logger.debug(f"SingleStudent: socialaccount_set.get in get_repos took {duration_get_repos:.4f} seconds")
         return github.extra_data["repos_url"]
 
     def get_name(self, obj):

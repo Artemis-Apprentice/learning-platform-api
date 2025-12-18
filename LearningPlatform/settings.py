@@ -195,12 +195,12 @@ LOGGING = {
     "loggers": {
         "django_structlog": {
             "handlers": ["console", "flat_line_file", "json_file"],
-            "level": "INFO",
+            "level": "WARN",
         },
         # Make sure to replace the following logger's name for yours
         "LearningAPI": {
             "handlers": ["console", "flat_line_file", "json_file"],
-            "level": "INFO",
+            "level": "DEBUG",
         },
         "django.server": {
             "handlers": ["console"],
