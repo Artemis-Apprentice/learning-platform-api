@@ -408,15 +408,15 @@ jobs:
             
             # Build new Docker images
             echo "🔨 Building Docker images..."
-            docker-compose build --no-cache web
+            docker-compose -f docker-compose.prod.yml build --no-cache web
             
             # Stop existing containers
             echo "🛑 Stopping existing containers..."
-            docker-compose down
+            docker-compose -f docker-compose.prod.yml down
             
             # Start containers with new images
             echo "🚀 Starting containers..."
-            docker-compose up -d
+            docker-compose -f docker-compose.prod.yml up -d
             
             # Wait for database to be ready
             echo "⏳ Waiting for database..."
@@ -424,15 +424,15 @@ jobs:
             
             # Run migrations
             echo "🔄 Running database migrations..."
-            docker-compose exec -T web python manage.py migrate --noinput
+            docker-compose -f docker-compose.prod.yml exec -T web python manage.py migrate --noinput
             
             # Collect static files
             echo "📦 Collecting static files..."
-            docker-compose exec -T web python manage.py collectstatic --noinput
+            docker-compose -f docker-compose.prod.yml exec -T web python manage.py collectstatic --noinput
             
             # Check container health
             echo "🏥 Checking container health..."
-            docker-compose ps
+            docker-compose -f docker-compose.prod.yml ps
             
             # Cleanup old images
             echo "🧹 Cleaning up old Docker images..."
@@ -490,84 +490,29 @@ cd /var/www/learning-platform-api
 git clone https://github.com/your-org/learning-platform-api.git .
 ```
 
-2. **Create production docker-compose file:**
+2. **Production docker-compose file:**
 
-Create `/var/www/learning-platform-api/docker-compose.prod.yml`:
+The repository includes [`docker-compose.prod.yml`](../docker-compose.prod.yml) which is production-ready with:
+- ✅ Gunicorn instead of Django dev server
+- ✅ Ports bound to localhost only (127.0.0.1)
+- ✅ No source code volume mounts
+- ✅ Production environment variables (DEBUG=False)
+- ✅ Proper restart policies
+- ✅ Health checks
+- ✅ Optional monitoring stack (Prometheus + Grafana)
 
-```yaml
-services:
-  db:
-    image: postgres:16
-    environment:
-      - POSTGRES_DB=${LEARN_OPS_DB}
-      - POSTGRES_USER=${LEARN_OPS_USER}
-      - POSTGRES_PASSWORD=${LEARN_OPS_PASSWORD}
-    volumes:
-      - lp_data:/var/lib/postgresql/data
-      - ./init-db.sh:/docker-entrypoint-initdb.d/01-init.sh:ro
-    restart: always
-    healthcheck:
-      test: ["CMD-SHELL", "pg_isready -U ${LEARN_OPS_USER} -d ${LEARN_OPS_DB}"]
-      interval: 10s
-      timeout: 5s
-      retries: 5
-    networks:
-      - app-network
+**Key differences from development [`docker-compose.yml`](../docker-compose.yml):**
 
-  web:
-    build: .
-    working_dir: /app
-    environment:
-      - PYTHONUNBUFFERED=1
-      - PYTHONDONTWRITEBYTECODE=1
-      - LEARN_OPS_DB=${LEARN_OPS_DB}
-      - LEARN_OPS_USER=${LEARN_OPS_USER}
-      - LEARN_OPS_PASSWORD=${LEARN_OPS_PASSWORD}
-      - LEARN_OPS_HOST=db
-      - LEARN_OPS_PORT=${LEARN_OPS_PORT}
-      - LEARN_OPS_CLIENT_ID=${LEARN_OPS_CLIENT_ID}
-      - LEARN_OPS_SECRET_KEY=${LEARN_OPS_SECRET_KEY}
-      - LEARN_OPS_DJANGO_SECRET_KEY=${LEARN_OPS_DJANGO_SECRET_KEY}
-      - LEARN_OPS_ALLOWED_HOSTS=${LEARN_OPS_ALLOWED_HOSTS}
-      - LEARN_OPS_SUPERUSER_NAME=${LEARN_OPS_SUPERUSER_NAME}
-      - LEARN_OPS_SUPERUSER_PASSWORD=${LEARN_OPS_SUPERUSER_PASSWORD}
-      - LEARNING_GITHUB_CALLBACK=${LEARNING_GITHUB_CALLBACK}
-      - DEBUG=False
-      - DEVELOPMENT_MODE=False
-    volumes:
-      - static_volume:/var/www/learning.nss.team/static
-      - ./logs:/app/logs
-    ports:
-      - "127.0.0.1:8000:8000"
-    depends_on:
-      db:
-        condition: service_healthy
-    restart: always
-    command: >
-      bash -c "
-        /app/django-entrypoint.sh &&
-        gunicorn LearningPlatform.wsgi:application --bind 0.0.0.0:8000 --workers 3 --timeout 60 --access-logfile - --error-logfile -
-      "
-    networks:
-      - app-network
+| Feature | Development | Production |
+|---------|-------------|------------|
+| Web Server | Django runserver | Gunicorn (3 workers) |
+| Source Code | Mounted as volume | Baked into image |
+| Port Binding | `0.0.0.0:8000` | `127.0.0.1:8000` |
+| DEBUG | True | False |
+| Restart Policy | unless-stopped | always |
+| GitHub Callback | localhost:3000 | production URL |
 
-volumes:
-  lp_data:
-  static_volume:
-
-networks:
-  app-network:
-    driver: bridge
-```
-
-3. **Update requirements.txt to include Gunicorn:**
-
-Add to [`requirements.txt`](../requirements.txt):
-```
-gunicorn==21.2.0
-```
-
-4. **Initial deployment:**
+3. **Initial deployment:**
 
 ```bash
 cd /var/www/learning-platform-api
