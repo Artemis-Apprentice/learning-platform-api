@@ -4,17 +4,18 @@
 
 This document outlines the deployment strategy for the Learning Platform API to Digital Ocean using GitHub Actions for automated deployment.
 
-**Project:** Django REST API with PostgreSQL database  
-**Deployment Target:** Digital Ocean Droplet  
-**Deployment Method:** GitHub Actions (automated on push to main)  
-**Database:** PostgreSQL in Docker container  
+**Project:** Django REST API with PostgreSQL database
+**Deployment Target:** Dedicated Digital Ocean Droplet (API + Database)
+**Deployment Method:** GitHub Actions (automated on push to main)
+**Database:** PostgreSQL in Docker container (same droplet as API)
 **Web Server:** Gunicorn + Nginx
+**Architecture:** Dedicated API droplet separate from frontend
 
 ---
 
 ## Table of Contents
 
-1. [Architecture Options](#architecture-options)
+1. [Architecture Overview](#architecture-overview)
 2. [Prerequisites](#prerequisites)
 3. [Droplet Setup](#droplet-setup)
 4. [Environment Configuration](#environment-configuration)
@@ -24,38 +25,88 @@ This document outlines the deployment strategy for the Learning Platform API to 
 8. [Security Considerations](#security-considerations)
 9. [Troubleshooting](#troubleshooting)
 10. [Rollback Strategy](#rollback-strategy)
+11. [Scaling Considerations](#scaling-considerations)
 
 ---
 
-## Architecture Options
+## Architecture Overview
 
-### Option A: Shared Droplet (Backend + Frontend)
+### Chosen Architecture: Dedicated API Droplet
 
-**Pros:**
-- Lower cost (single droplet)
-- Simpler infrastructure management
-- Shared resources
+This deployment uses a **dedicated droplet for the API and database**, separate from the frontend application.
 
-**Cons:**
-- Resource contention between frontend and backend
-- Single point of failure
-- More complex nginx configuration
+```
+┌─────────────────────────────────────────┐
+│   Frontend Droplet (Existing)          │
+│   - React/Next.js Application           │
+│   - learning.nss.team                   │
+└─────────────────┬───────────────────────┘
+                  │
+                  │ HTTPS API Calls
+                  │
+┌─────────────────▼───────────────────────┐
+│   API Droplet (New)                     │
+│   ┌─────────────────────────────────┐   │
+│   │  Nginx (Reverse Proxy + SSL)    │   │
+│   └──────────────┬──────────────────┘   │
+│                  │                       │
+│   ┌──────────────▼──────────────────┐   │
+│   │  Django API (Gunicorn)          │   │
+│   │  - Port 8000                     │   │
+│   │  - Docker Container              │   │
+│   └──────────────┬──────────────────┘   │
+│                  │                       │
+│   ┌──────────────▼──────────────────┐   │
+│   │  PostgreSQL Database            │   │
+│   │  - Docker Container              │   │
+│   │  - Persistent Volume             │   │
+│   └─────────────────────────────────┘   │
+│                                          │
+│   Optional:                              │
+│   ┌─────────────────────────────────┐   │
+│   │  Prometheus + Grafana           │   │
+│   │  - Monitoring Stack              │   │
+│   └─────────────────────────────────┘   │
+└──────────────────────────────────────────┘
+```
 
-**Recommended Droplet Size:** 4GB RAM / 2 vCPUs minimum
+### Why This Architecture?
 
-### Option B: Dedicated API Droplet (Recommended)
+**✅ Advantages:**
+- **Resource Isolation:** API and frontend don't compete for resources
+- **Independent Scaling:** Scale API independently based on load
+- **Clearer Separation:** Easier to debug and maintain
+- **Cost-Effective:** Database on same droplet as API (no network latency)
+- **Simple Management:** All API components in one place
+- **Easy Migration Path:** Can move to managed database later if needed
 
-**Pros:**
-- Better resource isolation
-- Independent scaling
-- Clearer separation of concerns
-- Easier to debug and monitor
+**📊 Recommended Droplet Specifications:**
 
-**Cons:**
-- Higher cost (additional droplet)
-- Slightly more complex networking
+| Component | Minimum | Recommended | High Traffic |
+|-----------|---------|-------------|--------------|
+| RAM | 2GB | 4GB | 8GB |
+| vCPUs | 1 | 2 | 4 |
+| Storage | 50GB | 80GB | 160GB |
+| Monthly Cost | ~$12 | ~$24 | ~$48 |
 
-**Recommended Droplet Size:** 2GB RAM / 1 vCPU minimum (can scale up)
+**Start with 2GB RAM droplet** and monitor resource usage. Digital Ocean allows easy upgrades without downtime.
+
+### Database Hosting Decision
+
+**Running PostgreSQL in Docker on the API droplet is ideal for:**
+- ✅ Small to medium traffic applications (< 1000 concurrent users)
+- ✅ Cost-conscious deployments
+- ✅ Applications where database and API are tightly coupled
+- ✅ Development and staging environments
+
+**Consider migrating to a separate database when:**
+- ⚠️ Consistent high CPU usage (>80%) on the droplet
+- ⚠️ Database queries slowing down API responses
+- ⚠️ Need for high availability (99.99% uptime)
+- ⚠️ Database size exceeds 50GB
+- ⚠️ Multiple applications need to access the same database
+
+See [Scaling Considerations](#scaling-considerations) for migration guidance.
 
 ---
 
@@ -871,6 +922,157 @@ Add to workflow (optional):
 - **Repository:** [learning-platform-api](https://github.com/your-org/learning-platform-api)
 - **Documentation:** [`README.md`](../README.md)
 - **Related Projects:** Frontend deployment at `learning.nss.team`
+
+---
+
+## Scaling Considerations
+
+### When to Scale Up Your Droplet
+
+Monitor these metrics to determine when to upgrade:
+
+**CPU Usage:**
+```bash
+# Check current CPU usage
+top
+# or
+docker stats
+```
+- **Action needed if:** Consistently >80% CPU usage
+- **Solution:** Upgrade to next droplet size (e.g., 2GB → 4GB)
+
+**Memory Usage:**
+```bash
+# Check memory usage
+free -h
+docker stats
+```
+- **Action needed if:** Consistently >85% memory usage or frequent swapping
+- **Solution:** Upgrade RAM (e.g., 2GB → 4GB → 8GB)
+
+**Database Performance:**
+```bash
+# Check database connections
+docker-compose exec db psql -U $LEARN_OPS_USER -d $LEARN_OPS_DB -c "SELECT count(*) FROM pg_stat_activity;"
+
+# Check slow queries (add to Django settings)
+# Enable query logging in PostgreSQL
+```
+- **Action needed if:** Query response times >500ms consistently
+- **Solution:** Optimize queries first, then consider database scaling
+
+### Migration Path: Database to Separate Infrastructure
+
+If you outgrow the single-droplet setup, here's the migration path:
+
+#### Option 1: Digital Ocean Managed Database (Recommended)
+
+**Advantages:**
+- Automated backups and point-in-time recovery
+- Automatic failover and high availability
+- Automated updates and security patches
+- Connection pooling built-in
+- Easy scaling
+
+**Migration Steps:**
+
+1. **Create Managed Database:**
+   - Go to Digital Ocean Dashboard → Databases
+   - Create PostgreSQL cluster (start with Basic plan)
+   - Note connection details
+
+2. **Backup Current Database:**
+   ```bash
+   docker-compose exec db pg_dump -U $LEARN_OPS_USER $LEARN_OPS_DB > backup.sql
+   ```
+
+3. **Restore to Managed Database:**
+   ```bash
+   psql -h managed-db-host -U doadmin -d defaultdb < backup.sql
+   ```
+
+4. **Update Environment Variables:**
+   ```bash
+   LEARN_OPS_HOST=managed-db-host.db.ondigitalocean.com
+   LEARN_OPS_PORT=25060
+   LEARN_OPS_USER=doadmin
+   # Update password and SSL settings
+   ```
+
+5. **Update docker-compose.prod.yml:**
+   - Remove `db` service
+   - Update `web` service to use external database
+   - Add SSL connection parameters
+
+6. **Test and Deploy:**
+   ```bash
+   docker-compose -f docker-compose.prod.yml up -d
+   ```
+
+#### Option 2: Dedicated Database Droplet
+
+**When to use:** Need more control than managed database offers
+
+**Migration Steps:**
+
+1. Create new droplet for database
+2. Install PostgreSQL directly (not in Docker for better performance)
+3. Configure PostgreSQL for remote connections
+4. Set up firewall rules (only allow API droplet IP)
+5. Migrate data using pg_dump/pg_restore
+6. Update API droplet environment variables
+
+### Horizontal Scaling (Multiple API Instances)
+
+When a single API droplet isn't enough:
+
+1. **Add Load Balancer:**
+   - Digital Ocean Load Balancer
+   - Distribute traffic across multiple API droplets
+
+2. **Deploy Multiple API Droplets:**
+   - Clone your API droplet
+   - All connect to same database
+   - Load balancer distributes requests
+
+3. **Session Management:**
+   - Use database-backed sessions (already configured in Django)
+   - Or use Redis for session storage
+
+4. **Static Files:**
+   - Move to Digital Ocean Spaces (S3-compatible)
+   - Update `STATIC_URL` in settings
+
+### Cost Optimization Tips
+
+**Current Setup (Single Droplet):**
+- 2GB Droplet: ~$12/month
+- Backups: ~$2.40/month (20% of droplet cost)
+- **Total: ~$14.40/month**
+
+**With Managed Database:**
+- 2GB API Droplet: ~$12/month
+- Basic Managed DB: ~$15/month
+- **Total: ~$27/month**
+
+**Cost Saving Strategies:**
+- Use snapshots instead of automated backups (manual, but cheaper)
+- Start with smallest droplet and scale up only when needed
+- Monitor with Prometheus to identify optimization opportunities
+- Optimize database queries before scaling hardware
+- Use CDN for static files (Digital Ocean Spaces + CDN)
+
+### Performance Monitoring Checklist
+
+Set up alerts for:
+- [ ] CPU usage >80% for 5 minutes
+- [ ] Memory usage >85%
+- [ ] Disk usage >80%
+- [ ] API response time >1 second
+- [ ] Database connection pool exhaustion
+- [ ] Error rate >1%
+
+Use Prometheus + Grafana (optional monitoring setup) to track these metrics automatically.
 
 ---
 
