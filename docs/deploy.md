@@ -301,41 +301,15 @@ Configure the following secrets in your GitHub repository (`Settings > Secrets a
 
 ### Server Environment File
 
-Create `/var/www/learning-platform-api/.env` on the droplet:
+**Note:** The `.env` file is automatically created and updated by the GitHub Actions workflow during deployment. You don't need to manually create it.
 
-```bash
-# Database Configuration
-LEARN_OPS_DB=learnops
-LEARN_OPS_USER=learnops_user
-LEARN_OPS_PASSWORD=your_secure_password
-LEARN_OPS_HOST=db
-LEARN_OPS_PORT=5432
+The workflow uses the GitHub Secrets configured above to generate the `.env` file on the droplet with proper permissions. This ensures:
+- ✅ Secrets are never committed to the repository
+- ✅ Environment variables stay in sync with GitHub Secrets
+- ✅ No manual file creation needed on the server
+- ✅ Proper file permissions are automatically set
 
-# Django Configuration
-LEARN_OPS_DJANGO_SECRET_KEY=your_django_secret_key
-LEARN_OPS_ALLOWED_HOSTS=api.learning.nss.team,learningapi.nss.team,127.0.0.1,localhost
-DEBUG=False
-DEVELOPMENT_MODE=False
-
-# GitHub OAuth
-LEARN_OPS_CLIENT_ID=your_github_client_id
-LEARN_OPS_SECRET_KEY=your_github_secret
-LEARNING_GITHUB_CALLBACK=https://learning.nss.team/auth/github
-
-# Superuser
-LEARN_OPS_SUPERUSER_NAME=admin
-LEARN_OPS_SUPERUSER_PASSWORD=your_admin_password
-
-# Python
-PYTHONUNBUFFERED=1
-PYTHONDONTWRITEBYTECODE=1
-```
-
-**Important:** Set proper permissions:
-```bash
-chmod 600 /var/www/learning-platform-api/.env
-chown deploy:deploy /var/www/learning-platform-api/.env
-```
+If you need to update environment variables, simply update the GitHub Secrets and redeploy.
 
 ---
 
@@ -372,6 +346,50 @@ jobs:
         run: |
           mkdir -p ~/.ssh
           ssh-keyscan -H ${{ secrets.DROPLET_HOST }} >> ~/.ssh/known_hosts
+
+      - name: Create environment file
+        env:
+          DROPLET_HOST: ${{ secrets.DROPLET_HOST }}
+          DROPLET_USER: ${{ secrets.DROPLET_USER }}
+        run: |
+          ssh $DROPLET_USER@$DROPLET_HOST << 'ENDSSH'
+            set -e
+            
+            # Create .env file with all required environment variables
+            cat > /var/www/learning-platform-api/.env << 'EOF'
+          # Database Configuration
+          LEARN_OPS_DB=${{ secrets.LEARN_OPS_DB }}
+          LEARN_OPS_USER=${{ secrets.LEARN_OPS_USER }}
+          LEARN_OPS_PASSWORD=${{ secrets.LEARN_OPS_PASSWORD }}
+          LEARN_OPS_HOST=db
+          LEARN_OPS_PORT=${{ secrets.LEARN_OPS_PORT }}
+
+          # Django Configuration
+          LEARN_OPS_DJANGO_SECRET_KEY=${{ secrets.LEARN_OPS_DJANGO_SECRET_KEY }}
+          LEARN_OPS_ALLOWED_HOSTS=${{ secrets.LEARN_OPS_ALLOWED_HOSTS }}
+          DEBUG=False
+          DEVELOPMENT_MODE=False
+
+          # GitHub OAuth
+          LEARN_OPS_CLIENT_ID=${{ secrets.LEARN_OPS_CLIENT_ID }}
+          LEARN_OPS_SECRET_KEY=${{ secrets.LEARN_OPS_SECRET_KEY }}
+          LEARNING_GITHUB_CALLBACK=${{ secrets.LEARNING_GITHUB_CALLBACK }}
+
+          # Superuser
+          LEARN_OPS_SUPERUSER_NAME=${{ secrets.LEARN_OPS_SUPERUSER_NAME }}
+          LEARN_OPS_SUPERUSER_PASSWORD=${{ secrets.LEARN_OPS_SUPERUSER_PASSWORD }}
+
+          # Python
+          PYTHONUNBUFFERED=1
+          PYTHONDONTWRITEBYTECODE=1
+          EOF
+            
+            # Set proper permissions
+            chmod 600 /var/www/learning-platform-api/.env
+            chown deploy:deploy /var/www/learning-platform-api/.env
+            
+            echo "✅ Environment file created successfully"
+          ENDSSH
 
       - name: Deploy to droplet
         env:
