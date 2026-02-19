@@ -125,7 +125,7 @@ jobs:
         run: |
           echo "🔍 Verifying deployment..."
           sleep 5
-          curl -f https://api.learning.nss.team/health || exit 1
+          curl -f https://api.codenerdcentral.com/health || exit 1
           echo "✅ Health check passed!"
 
       - name: Notify on failure
