@@ -34,7 +34,7 @@ jobs:
             set -e
             
             # Create .env file with all required environment variables
-            cat > /var/www/learning-platform-api/.env << 'EOF'
+            cat > /var/www/learning-platform-api/.env << EOF
           # Database Configuration
           LEARN_OPS_DB=${{ secrets.LEARN_OPS_DB }}
           LEARN_OPS_USER=${{ secrets.LEARN_OPS_USER }}
@@ -79,8 +79,6 @@ jobs:
             
             # Navigate to application directory
             cd /var/www/learning-platform-api
-
-            ssh-add ~/.ssh/github_deploy_key
             
             # Pull latest code
             echo "📥 Pulling latest code..."
