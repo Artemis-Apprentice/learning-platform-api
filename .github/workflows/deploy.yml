@@ -1,0 +1,134 @@
+name: Deploy to Digital Ocean
+
+on:
+  push:
+    branches:
+      - main
+  workflow_dispatch:  # Allow manual triggering
+
+jobs:
+  deploy:
+    name: Deploy to Production
+    runs-on: ubuntu-latest
+    
+    steps:
+      - name: Checkout code
+        uses: actions/checkout@v4
+
+      - name: Setup SSH
+        uses: webfactory/ssh-agent@v0.8.0
+        with:
+          ssh-private-key: ${{ secrets.DROPLET_SSH_KEY }}
+
+      - name: Add server to known hosts
+        run: |
+          mkdir -p ~/.ssh
+          ssh-keyscan -H ${{ secrets.DROPLET_HOST }} >> ~/.ssh/known_hosts
+
+      - name: Create environment file
+        env:
+          DROPLET_HOST: ${{ secrets.DROPLET_HOST }}
+          DROPLET_USER: ${{ secrets.DROPLET_USER }}
+        run: |
+          ssh $DROPLET_USER@$DROPLET_HOST << 'ENDSSH'
+            set -e
+            
+            # Create .env file with all required environment variables
+            cat > /var/www/learning-platform-api/.env << 'EOF'
+          # Database Configuration
+          LEARN_OPS_DB=${{ secrets.LEARN_OPS_DB }}
+          LEARN_OPS_USER=${{ secrets.LEARN_OPS_USER }}
+          LEARN_OPS_PASSWORD=${{ secrets.LEARN_OPS_PASSWORD }}
+          LEARN_OPS_HOST=db
+          LEARN_OPS_PORT=${{ secrets.LEARN_OPS_PORT }}
+
+          # Django Configuration
+          LEARN_OPS_DJANGO_SECRET_KEY=${{ secrets.LEARN_OPS_DJANGO_SECRET_KEY }}
+          LEARN_OPS_ALLOWED_HOSTS=${{ secrets.LEARN_OPS_ALLOWED_HOSTS }}
+          DEBUG=False
+          DEVELOPMENT_MODE=False
+
+          # GitHub OAuth
+          LEARN_OPS_CLIENT_ID=${{ secrets.LEARN_OPS_CLIENT_ID }}
+          LEARN_OPS_SECRET_KEY=${{ secrets.LEARN_OPS_SECRET_KEY }}
+          LEARNING_GITHUB_CALLBACK=${{ secrets.LEARNING_GITHUB_CALLBACK }}
+
+          # Superuser
+          LEARN_OPS_SUPERUSER_NAME=${{ secrets.LEARN_OPS_SUPERUSER_NAME }}
+          LEARN_OPS_SUPERUSER_PASSWORD=${{ secrets.LEARN_OPS_SUPERUSER_PASSWORD }}
+
+          # Python
+          PYTHONUNBUFFERED=1
+          PYTHONDONTWRITEBYTECODE=1
+          EOF
+            
+            # Set proper permissions
+            chmod 600 /var/www/learning-platform-api/.env
+            chown deploy:deploy /var/www/learning-platform-api/.env
+            
+            echo "✅ Environment file created successfully"
+          ENDSSH
+
+      - name: Deploy to droplet
+        env:
+          DROPLET_HOST: ${{ secrets.DROPLET_HOST }}
+          DROPLET_USER: ${{ secrets.DROPLET_USER }}
+        run: |
+          ssh $DROPLET_USER@$DROPLET_HOST << 'ENDSSH'
+            set -e
+            
+            # Navigate to application directory
+            cd /var/www/learning-platform-api
+            
+            # Pull latest code
+            echo "📥 Pulling latest code..."
+            git pull origin main
+            
+            # Build new Docker images
+            echo "🔨 Building Docker images..."
+            docker-compose -f docker-compose.prod.yml build --no-cache web
+            
+            # Stop existing containers
+            echo "🛑 Stopping existing containers..."
+            docker-compose -f docker-compose.prod.yml down
+            
+            # Start containers with new images
+            echo "🚀 Starting containers..."
+            docker-compose -f docker-compose.prod.yml up -d
+            
+            # Wait for database to be ready
+            echo "⏳ Waiting for database..."
+            sleep 10
+            
+            # Run migrations
+            echo "🔄 Running database migrations..."
+            docker-compose -f docker-compose.prod.yml exec -T web python manage.py migrate --noinput
+            
+            # Collect static files
+            echo "📦 Collecting static files..."
+            docker-compose -f docker-compose.prod.yml exec -T web python manage.py collectstatic --noinput
+            
+            # Check container health
+            echo "🏥 Checking container health..."
+            docker-compose -f docker-compose.prod.yml ps
+            
+            # Cleanup old images
+            echo "🧹 Cleaning up old Docker images..."
+            docker image prune -f
+            
+            echo "✅ Deployment completed successfully!"
+          ENDSSH
+
+      - name: Verify deployment
+        env:
+          DROPLET_HOST: ${{ secrets.DROPLET_HOST }}
+        run: |
+          echo "🔍 Verifying deployment..."
+          sleep 5
+          curl -f https://api.learning.nss.team/health || exit 1
+          echo "✅ Health check passed!"
+
+      - name: Notify on failure
+        if: failure()
+        run: |
+          echo "❌ Deployment failed! Check the logs above for details."
