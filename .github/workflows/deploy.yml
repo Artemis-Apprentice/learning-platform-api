@@ -79,6 +79,8 @@ jobs:
             
             # Navigate to application directory
             cd /var/www/learning-platform-api
+
+            ssh-add ~/.ssh/github_deploy_key
             
             # Pull latest code
             echo "📥 Pulling latest code..."
@@ -102,12 +104,12 @@ jobs:
             
             # Run migrations
             echo "🔄 Running database migrations..."
-            docker-compose -f docker-compose.prod.yml exec -T web python manage.py migrate --noinput
+            docker-compose -f docker-compose.prod.yml exec -T web python manage.py migrate --noinput 2>&1
             
             # Collect static files
             echo "📦 Collecting static files..."
-            docker-compose -f docker-compose.prod.yml exec -T web python manage.py collectstatic --noinput
-            
+            docker-compose -f docker-compose.prod.yml exec -T web python manage.py collectstatic --noinput 2>&1
+             
             # Check container health
             echo "🏥 Checking container health..."
             docker-compose -f docker-compose.prod.yml ps
