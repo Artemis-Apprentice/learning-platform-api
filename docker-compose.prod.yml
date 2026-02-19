@@ -1,0 +1,122 @@
+services:
+  db:
+    image: postgres:16
+    environment:
+      # PostgreSQL default settings
+      - POSTGRES_DB=${LEARN_OPS_DB}
+      - POSTGRES_USER=${LEARN_OPS_USER}
+      - POSTGRES_PASSWORD=${LEARN_OPS_PASSWORD}
+    volumes:
+      - lp_data:/var/lib/postgresql/data
+      - ./init-db.sh:/docker-entrypoint-initdb.d/01-init.sh:ro
+    # Only expose to localhost for security
+    ports:
+      - "127.0.0.1:5432:5432"
+    healthcheck:
+      test: ["CMD-SHELL", "pg_isready -U ${LEARN_OPS_USER} -d ${LEARN_OPS_DB}"]
+      interval: 10s
+      timeout: 5s
+      retries: 5
+    restart: always
+    networks:
+      - app-network
+
+  web:
+    build: .
+    working_dir: /app
+    environment:
+      - PYTHONUNBUFFERED=1
+      - PYTHONDONTWRITEBYTECODE=1
+      - LEARN_OPS_DB=${LEARN_OPS_DB}
+      - LEARN_OPS_USER=${LEARN_OPS_USER}
+      - LEARN_OPS_PASSWORD=${LEARN_OPS_PASSWORD}
+      - LEARN_OPS_HOST=db
+      - LEARN_OPS_PORT=${LEARN_OPS_PORT}
+      - LEARN_OPS_CLIENT_ID=${LEARN_OPS_CLIENT_ID}
+      - LEARN_OPS_SECRET_KEY=${LEARN_OPS_SECRET_KEY}
+      - LEARN_OPS_DJANGO_SECRET_KEY=${LEARN_OPS_DJANGO_SECRET_KEY}
+      - LEARN_OPS_ALLOWED_HOSTS=${LEARN_OPS_ALLOWED_HOSTS}
+      - LEARN_OPS_SUPERUSER_NAME=${LEARN_OPS_SUPERUSER_NAME}
+      - LEARN_OPS_SUPERUSER_PASSWORD=${LEARN_OPS_SUPERUSER_PASSWORD}
+      - LEARNING_GITHUB_CALLBACK=${LEARNING_GITHUB_CALLBACK}
+      - DEBUG=False
+      - DEVELOPMENT_MODE=False
+    volumes:
+      # Only mount logs and static files, not source code
+      - static_volume:/var/www/learning.nss.team/static
+      - ./logs:/app/logs
+    # Only expose to localhost - nginx will proxy
+    ports:
+      - "127.0.0.1:8000:8000"
+    depends_on:
+      db:
+        condition: service_healthy
+    restart: always
+    # Use Gunicorn for production
+    command: >
+      bash -c "
+        /app/django-entrypoint.sh &&
+        gunicorn LearningPlatform.wsgi:application 
+          --bind 0.0.0.0:8000 
+          --workers 3 
+          --timeout 60 
+          --access-logfile - 
+          --error-logfile - 
+          --log-level info
+      "
+    networks:
+      - app-network
+
+  # Optional: Prometheus for monitoring
+  prometheus:
+    image: prom/prometheus:latest
+    volumes:
+      - ./prometheus.yml:/etc/prometheus/prometheus.yml:ro
+      - prometheus_data:/prometheus
+    command:
+      - '--config.file=/etc/prometheus/prometheus.yml'
+      - '--storage.tsdb.path=/prometheus'
+      - '--web.console.libraries=/etc/prometheus/console_libraries'
+      - '--web.console.templates=/etc/prometheus/consoles'
+      - '--web.enable-lifecycle'
+    ports:
+      - "127.0.0.1:9090:9090"
+    depends_on:
+      - web
+    restart: always
+    networks:
+      - app-network
+    # Uncomment to disable monitoring
+    # profiles:
+    #   - monitoring
+
+  # Optional: Grafana for monitoring dashboards
+  grafana:
+    image: grafana/grafana:latest
+    volumes:
+      - grafana_data:/var/lib/grafana
+    environment:
+      - GF_SECURITY_ADMIN_USER=admin
+      - GF_SECURITY_ADMIN_PASSWORD=${GRAFANA_ADMIN_PASSWORD:-admin}
+      - GF_USERS_ALLOW_SIGN_UP=false
+      - GF_SERVER_ROOT_URL=https://grafana.learning.nss.team
+    ports:
+      - "127.0.0.1:3001:3000"
+    depends_on:
+      - prometheus
+    restart: always
+    networks:
+      - app-network
+    # Uncomment to disable monitoring
+    # profiles:
+    #   - monitoring
+
+volumes:
+  lp_data:
+  static_volume:
+  prometheus_data:
+  grafana_data:
+
+networks:
+  app-network:
+    driver: bridge
