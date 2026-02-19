@@ -30,7 +30,7 @@ jobs:
           DROPLET_HOST: ${{ secrets.DROPLET_HOST }}
           DROPLET_USER: ${{ secrets.DROPLET_USER }}
         run: |
-          ssh $DROPLET_USER@$DROPLET_HOST << 'ENDSSH'
+          ssh $DROPLET_USER@$DROPLET_HOST << ENDSSH
             set -e
             
             # Create .env file with all required environment variables
@@ -74,7 +74,7 @@ jobs:
           DROPLET_HOST: ${{ secrets.DROPLET_HOST }}
           DROPLET_USER: ${{ secrets.DROPLET_USER }}
         run: |
-          ssh $DROPLET_USER@$DROPLET_HOST << 'ENDSSH'
+          ssh $DROPLET_USER@$DROPLET_HOST << ENDSSH
             set -e
             
             # Navigate to application directory
