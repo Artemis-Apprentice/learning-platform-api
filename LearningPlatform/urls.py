@@ -19,6 +19,7 @@ from django.urls import path
 from rest_framework import routers
 from rest_framework.authtoken import views as rest_views
 from LearningAPI.views.github import views as github_views
+from LearningAPI.views.health import health_check
 from LearningAPI import views
 
 router = routers.DefaultRouter(trailing_slash=False)
@@ -51,6 +52,7 @@ router.register(r'cohortinfo', views.CohortInfoViewSet, 'info')
 
 
 urlpatterns = [
+    path('health', health_check, name='health_check'),
 	  path('', include('django_prometheus.urls')),
     path('', include(router.urls)),
     path('records/entries/<int:entry_id>', views.LearningRecordViewSet.as_view({'delete': 'entries'}), name="entries"),
