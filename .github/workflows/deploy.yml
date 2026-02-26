@@ -59,8 +59,9 @@ jobs:
           DROPLET_HOST: ${{ secrets.DROPLET_HOST }}
           DROPLET_USER: ${{ secrets.DROPLET_USER }}
         run: |
-          scp docker-compose.prod.yml prometheus.yml \
+          scp docker-compose.prod.yml prometheus.yml init-db.sh \
             $DROPLET_USER@$DROPLET_HOST:/var/www/learning-platform-api/
+          ssh $DROPLET_USER@$DROPLET_HOST "mkdir -p /var/www/learning-platform-api/logs"
 
       - name: Create environment file
         env:
