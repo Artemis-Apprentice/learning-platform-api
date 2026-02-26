@@ -10,7 +10,7 @@ jobs:
   deploy:
     name: Deploy to Production
     runs-on: ubuntu-latest
-    
+
     steps:
       - name: Checkout code
         uses: actions/checkout@v4
@@ -32,7 +32,7 @@ jobs:
         run: |
           ssh $DROPLET_USER@$DROPLET_HOST << ENDSSH
             set -e
-            
+
             # Create .env file with all required environment variables
             cat > /var/www/learning-platform-api/.env << EOF
           # Database Configuration
@@ -61,11 +61,11 @@ jobs:
           PYTHONUNBUFFERED=1
           PYTHONDONTWRITEBYTECODE=1
           EOF
-            
+
             # Set proper permissions
             chmod 600 /var/www/learning-platform-api/.env
             chown deploy:deploy /var/www/learning-platform-api/.env
-            
+
             echo "✅ Environment file created successfully"
           ENDSSH
 
@@ -76,46 +76,40 @@ jobs:
         run: |
           ssh $DROPLET_USER@$DROPLET_HOST << ENDSSH
             set -e
-            
+
             # Navigate to application directory
             cd /var/www/learning-platform-api
-            
+            mkdir -p /var/www/learning-platform-api/logs
+            chown -R deploy:deploy /var/www/learning-platform-api/logs
+
             # Pull latest code
             echo "📥 Pulling latest code..."
             git pull origin main
-            
+
             # Build new Docker images
             echo "🔨 Building Docker images..."
             docker-compose -f docker-compose.prod.yml build --no-cache web
-            
+
             # Stop existing containers
             echo "🛑 Stopping existing containers..."
             docker-compose -f docker-compose.prod.yml down
-            
+
             # Start containers with new images
             echo "🚀 Starting containers..."
             docker-compose -f docker-compose.prod.yml up -d
-            
+
             # Wait for database to be ready
             echo "⏳ Waiting for database..."
             sleep 10
-            
-            # Run migrations
-            echo "🔄 Running database migrations..."
-            docker-compose -f docker-compose.prod.yml exec -T web python manage.py migrate --noinput 2>&1
-            
-            # Collect static files
-            echo "📦 Collecting static files..."
-            docker-compose -f docker-compose.prod.yml exec -T web python manage.py collectstatic --noinput 2>&1
-             
+
             # Check container health
             echo "🏥 Checking container health..."
             docker-compose -f docker-compose.prod.yml ps
-            
+
             # Cleanup old images
             echo "🧹 Cleaning up old Docker images..."
             docker image prune -f
-            
+
             echo "✅ Deployment completed successfully!"
           ENDSSH
 
