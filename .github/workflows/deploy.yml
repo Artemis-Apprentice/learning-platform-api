@@ -125,11 +125,15 @@ jobs:
 
             # Pull the latest image from DOCR
             echo "📥 Pulling latest image from registry..."
-            docker-compose -f docker-compose.prod.yml pull web
+            docker compose -f docker-compose.prod.yml pull web
 
-            # Stop existing containers and start with new image
-            echo "🚀 Restarting containers with new image..."
-            docker-compose -f docker-compose.prod.yml up -d --no-build
+            # Stop existing containers, then start with new image
+            # (down + up avoids docker-compose v1 'ContainerConfig' recreate bug)
+            echo "🛑 Stopping existing containers..."
+            docker compose -f docker-compose.prod.yml down
+
+            echo "🚀 Starting containers with new image..."
+            docker compose -f docker-compose.prod.yml up -d
 
             # Wait for database to be ready
             echo "⏳ Waiting for database..."
@@ -137,7 +141,7 @@ jobs:
 
             # Check container health
             echo "🏥 Checking container health..."
-            docker-compose -f docker-compose.prod.yml ps
+            docker compose -f docker-compose.prod.yml ps
 
             # Cleanup old images
             echo "🧹 Cleaning up old Docker images..."
