@@ -104,7 +104,7 @@ jobs:
 
             # Authenticate with Digital Ocean Container Registry
             echo "🔐 Logging in to container registry..."
-            doctl registry login --expiry-seconds 600
+            echo "${{ secrets.DIGITALOCEAN_ACCESS_TOKEN }}" | docker login registry.digitalocean.com -u ${{ secrets.DIGITALOCEAN_ACCESS_TOKEN }} --password-stdin
 
             # Navigate to application directory
             cd /var/www/learning-platform-api
