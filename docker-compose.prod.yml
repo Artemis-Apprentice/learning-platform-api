@@ -22,7 +22,7 @@ services:
       - app-network
 
   web:
-    build: .
+    image: registry.digitalocean.com/codenerdcentral/learning-platform-api:latest
     working_dir: /app
     environment:
       - PYTHONUNBUFFERED=1
@@ -56,14 +56,15 @@ services:
     command: >
       bash -c "
         /app/django-entrypoint.sh &&
-        gunicorn LearningPlatform.wsgi:application 
-          --bind 0.0.0.0:8000 
-          --workers 3 
-          --timeout 60 
-          --access-logfile - 
-          --error-logfile - 
+        gunicorn LearningPlatform.wsgi:application
+          --bind 0.0.0.0:8000
+          --workers 3
+          --timeout 60
+          --access-logfile -
+          --error-logfile -
           --log-level info
       "
+
     networks:
       - app-network
 
