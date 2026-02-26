@@ -79,8 +79,6 @@ jobs:
 
             # Navigate to application directory
             cd /var/www/learning-platform-api
-            mkdir -p /var/www/learning-platform-api/logs
-            chown -R deploy:deploy /var/www/learning-platform-api/logs
 
             # Pull latest code
             echo "📥 Pulling latest code..."
