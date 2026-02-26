@@ -59,6 +59,8 @@ jobs:
           DROPLET_HOST: ${{ secrets.DROPLET_HOST }}
           DROPLET_USER: ${{ secrets.DROPLET_USER }}
         run: |
+          # Clean up any stale Docker-created directories that should be files
+          ssh $DROPLET_USER@$DROPLET_HOST "rm -rf /var/www/learning-platform-api/init-db.sh"
           scp docker-compose.prod.yml prometheus.yml init-db.sh \
             $DROPLET_USER@$DROPLET_HOST:/var/www/learning-platform-api/
           ssh $DROPLET_USER@$DROPLET_HOST "mkdir -p /var/www/learning-platform-api/logs"
