@@ -41,6 +41,9 @@ jobs:
     needs: build-and-push
 
     steps:
+      - name: Checkout code
+        uses: actions/checkout@v4
+
       - name: Setup SSH
         uses: webfactory/ssh-agent@v0.8.0
         with:
@@ -50,6 +53,14 @@ jobs:
         run: |
           mkdir -p ~/.ssh
           ssh-keyscan -H ${{ secrets.DROPLET_HOST }} >> ~/.ssh/known_hosts
+
+      - name: Copy config files to droplet
+        env:
+          DROPLET_HOST: ${{ secrets.DROPLET_HOST }}
+          DROPLET_USER: ${{ secrets.DROPLET_USER }}
+        run: |
+          scp docker-compose.prod.yml prometheus.yml \
+            $DROPLET_USER@$DROPLET_HOST:/var/www/learning-platform-api/
 
       - name: Create environment file
         env:
