@@ -70,7 +70,7 @@ CORS_ORIGIN_WHITELIST = (
 )
 
 MIDDLEWARE = [
-	  'django_prometheus.middleware.PrometheusBeforeMiddleware', 
+	  'django_prometheus.middleware.PrometheusBeforeMiddleware',
     'django.middleware.security.SecurityMiddleware',
     'django.contrib.sessions.middleware.SessionMiddleware',
     'corsheaders.middleware.CorsMiddleware',
@@ -253,3 +253,9 @@ USE_TZ = True
 STATIC_URL = '/static/'
 STATIC_ROOT = "/var/www/learning.nss.team/static"
 SITE_ID = 1
+
+# RabbitMQ Configuration (POC)
+RABBITMQ_HOST = os.environ.get('RABBITMQ_HOST', 'localhost')
+RABBITMQ_PORT = int(os.environ.get('RABBITMQ_PORT', 5672))
+RABBITMQ_USER = os.environ.get('RABBITMQ_USER', 'admin')
+RABBITMQ_PASSWORD = os.environ.get('RABBITMQ_PASSWORD', 'admin123')

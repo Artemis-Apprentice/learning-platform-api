@@ -20,6 +20,7 @@ from rest_framework import routers
 from rest_framework.authtoken import views as rest_views
 from LearningAPI.views.github import views as github_views
 from LearningAPI import views
+from LearningAPI.views import PocJobViewSet
 
 router = routers.DefaultRouter(trailing_slash=False)
 router.register(r'profile', views.Profile, 'profile')
@@ -48,10 +49,11 @@ router.register(r'studenttags', views.StudentTagViewSet, 'studenttag')
 router.register(r'notes', views.StudentNoteViewSet, 'note')
 router.register(r'personalities', views.PersonalityView, 'person')
 router.register(r'cohortinfo', views.CohortInfoViewSet, 'info')
+router.register(r'poc-jobs', PocJobViewSet, basename='poc-job')
 
 
 urlpatterns = [
-	  path('', include('django_prometheus.urls')),
+    path('', include('django_prometheus.urls')),
     path('', include(router.urls)),
     path('records/entries/<int:entry_id>', views.LearningRecordViewSet.as_view({'delete': 'entries'}), name="entries"),
 

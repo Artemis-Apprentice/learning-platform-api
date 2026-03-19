@@ -1,6 +1,23 @@
 
 
 services:
+  rabbitmq:
+    image: rabbitmq:3-management
+    container_name: learning-platform-rabbitmq
+    environment:
+      - RABBITMQ_DEFAULT_USER=admin
+      - RABBITMQ_DEFAULT_PASS=admin123
+    ports:
+      - "5672:5672"
+      - "15672:15672"
+    volumes:
+      - rabbitmq_data:/var/lib/rabbitmq
+    healthcheck:
+      test: ["CMD", "rabbitmq-diagnostics", "ping"]
+      interval: 10s
+      timeout: 5s
+      retries: 5
+
   db:
     image: postgres:16
     environment:
@@ -16,7 +33,7 @@ services:
       - lp_data:/var/lib/postgresql/data
       - ./init-db.sh:/docker-entrypoint-initdb.d/01-init.sh:ro
     ports:
-      - "5432:5432"
+      - "6543:5432"
     healthcheck:
       test: ["CMD-SHELL", "pg_isready -U ${LEARN_OPS_USER} -d ${LEARN_OPS_DB}"]
       interval: 5s
@@ -41,12 +58,18 @@ services:
       - LEARN_OPS_SUPERUSER_NAME=${LEARN_OPS_SUPERUSER_NAME}
       - LEARN_OPS_SUPERUSER_PASSWORD=${LEARN_OPS_SUPERUSER_PASSWORD}
       - LEARNING_GITHUB_CALLBACK=http://localhost:3000/auth/github
+      - RABBITMQ_HOST=rabbitmq
+      - RABBITMQ_PORT=5672
+      - RABBITMQ_USER=admin
+      - RABBITMQ_PASSWORD=admin123
     volumes:
       - .:/app
     ports:
       - "8000:8000"
     depends_on:
       db:
+        condition: service_healthy
+      rabbitmq:
         condition: service_healthy
     restart: unless-stopped
     command: >
@@ -93,3 +116,4 @@ volumes:
   lp_data:
   prometheus_data:
   grafana_data:
+  rabbitmq_data:

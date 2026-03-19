@@ -406,38 +406,71 @@ docker-compose restart web
 """
 Simple RabbitMQ consumer for POC testing.
 Runs outside Docker for easier debugging.
+Connects directly to PostgreSQL - no Django dependency.
 """
 import pika
 import json
 import time
 import os
-import django
+import psycopg2
+import psycopg2.extras
 from datetime import datetime
 
-# Setup Django
-os.environ.setdefault('DJANGO_SETTINGS_MODULE', 'LearningPlatform.settings')
-django.setup()
+# ---------------------------------------------------------------------------
+# Standalone settings — no Django imports, no shared settings module
+# ---------------------------------------------------------------------------
 
-from LearningAPI.models.coursework import PocJob
+DB_SETTINGS = {
+    'host':     os.environ.get('DB_HOST',     'localhost'),
+    'port':     int(os.environ.get('DB_PORT', 5432)),
+    'dbname':   os.environ.get('DB_NAME',     'learningplatform'),
+    'user':     os.environ.get('DB_USER',     'learningplatform'),
+    'password': os.environ.get('DB_PASSWORD', 'learningplatform'),
+}
+
+RABBITMQ_SETTINGS = {
+    'host':     os.environ.get('RABBITMQ_HOST',     'localhost'),
+    'port':     int(os.environ.get('RABBITMQ_PORT', 5672)),
+    'user':     os.environ.get('RABBITMQ_USER',     'admin'),
+    'password': os.environ.get('RABBITMQ_PASSWORD', 'admin123'),
+}
+
+# ---------------------------------------------------------------------------
+
+def get_db_connection():
+    """Return a new psycopg2 connection using the standalone DB settings."""
+    return psycopg2.connect(**DB_SETTINGS)
+
 
 def process_message(job_id, data):
     """
     Simulate processing the job.
     In real implementation, this would call GitHub API, etc.
+    Updates the poc_jobs table directly via psycopg2.
     """
     print(f"\n{'='*60}")
     print(f"🔄 Processing job: {job_id}")
     print(f"📦 Received data: {data}")
     print(f"{'='*60}\n")
 
+    conn = None
     try:
-        # Get the job
-        job = PocJob.objects.get(pk=job_id)
+        conn = get_db_connection()
+        cur = conn.cursor()
+
+        # Verify the job exists
+        cur.execute("SELECT id FROM poc_jobs WHERE id = %s", (job_id,))
+        if cur.fetchone() is None:
+            print(f"❌ Job {job_id} not found in database\n")
+            return False
 
         # Update status to IN_PROGRESS
-        job.status = 'IN_PROGRESS'
-        job.save()
-        print(f"✓ Updated job status to IN_PROGRESS")
+        cur.execute(
+            "UPDATE poc_jobs SET status = %s, updated_at = NOW() WHERE id = %s",
+            ('IN_PROGRESS', job_id)
+        )
+        conn.commit()
+        print("✓ Updated job status to IN_PROGRESS")
 
         # Simulate work (e.g., GitHub API calls)
         print("⏳ Simulating work...")
@@ -446,46 +479,60 @@ def process_message(job_id, data):
             print(f"   Step {i}/5 completed...")
 
             # Update progress
-            job.result_data = {
+            result = json.dumps({
                 'progress': f'{i}/5',
                 'last_update': datetime.now().isoformat()
-            }
-            job.save()
+            })
+            cur.execute(
+                "UPDATE poc_jobs SET result_data = %s, updated_at = NOW() WHERE id = %s",
+                (result, job_id)
+            )
+            conn.commit()
 
         # Mark as completed
-        job.status = 'COMPLETED'
-        job.result_data = {
+        final_result = json.dumps({
             'completed_at': datetime.now().isoformat(),
             'processed_data': data,
             'message': 'POC job completed successfully!'
-        }
-        job.save()
+        })
+        cur.execute(
+            "UPDATE poc_jobs SET status = %s, result_data = %s, updated_at = NOW() WHERE id = %s",
+            ('COMPLETED', final_result, job_id)
+        )
+        conn.commit()
 
         print(f"✅ Job {job_id} completed successfully!\n")
         return True
 
-    except PocJob.DoesNotExist:
-        print(f"❌ Job {job_id} not found in database\n")
-        return False
     except Exception as e:
         print(f"❌ Error processing job: {e}\n")
 
         # Try to mark job as failed
         try:
-            job = PocJob.objects.get(pk=job_id)
-            job.status = 'FAILED'
-            job.result_data = {'error': str(e)}
-            job.save()
-        except:
+            if conn:
+                conn.rollback()
+                cur = conn.cursor()
+                error_result = json.dumps({'error': str(e)})
+                cur.execute(
+                    "UPDATE poc_jobs SET status = %s, result_data = %s, updated_at = NOW() WHERE id = %s",
+                    ('FAILED', error_result, job_id)
+                )
+                conn.commit()
+        except Exception:
             pass
 
         return False
+
+    finally:
+        if conn:
+            conn.close()
+
 
 def callback(ch, method, properties, body):
     """
     Callback function when message is received.
     """
-    print(f"\n📨 Received message from RabbitMQ")
+    print("\n📨 Received message from RabbitMQ")
 
     try:
         # Parse message
@@ -509,6 +556,7 @@ def callback(ch, method, properties, body):
         print(f"❌ Error in callback: {e}")
         ch.basic_nack(delivery_tag=method.delivery_tag, requeue=False)
 
+
 def main():
     """
     Start the consumer and listen for messages.
@@ -517,12 +565,15 @@ def main():
     print("🐰 RabbitMQ POC Consumer Starting...")
     print("="*60 + "\n")
 
-    # Connect to RabbitMQ
-    credentials = pika.PlainCredentials('admin', 'admin123')
+    # Connect to RabbitMQ using standalone settings
+    credentials = pika.PlainCredentials(
+        RABBITMQ_SETTINGS['user'],
+        RABBITMQ_SETTINGS['password']
+    )
     connection = pika.BlockingConnection(
         pika.ConnectionParameters(
-            host='localhost',
-            port=5672,
+            host=RABBITMQ_SETTINGS['host'],
+            port=RABBITMQ_SETTINGS['port'],
             credentials=credentials
         )
     )
@@ -551,6 +602,7 @@ def main():
     connection.close()
     print("✓ Consumer stopped\n")
 
+
 if __name__ == '__main__':
     main()
 ```
@@ -565,10 +617,26 @@ chmod +x consumer_poc.py
 
 #### Step 6: Run End-to-End Test (30 minutes)
 
+**Install consumer dependencies (one-time):**
+
+```bash
+pip install pika psycopg2-binary
+```
+
 **Terminal 1 - Start Consumer:**
 
 ```bash
-# Ensure you're in the project directory
+# Set DB + RabbitMQ connection env vars, then run the script
+export DB_HOST=localhost
+export DB_PORT=5432
+export DB_NAME=learningplatform
+export DB_USER=learningplatform
+export DB_PASSWORD=learningplatform
+export RABBITMQ_HOST=localhost
+export RABBITMQ_PORT=5672
+export RABBITMQ_USER=admin
+export RABBITMQ_PASSWORD=admin123
+
 python consumer_poc.py
 ```
 
@@ -696,10 +764,11 @@ docker-compose logs web
 # Make sure migrations are run
 docker-compose exec web python manage.py migrate
 
-# Check if PocJob model exists
-docker-compose exec web python manage.py shell
->>> from LearningAPI.models.coursework import PocJob
->>> PocJob.objects.count()
+# Verify the poc_jobs table exists directly in PostgreSQL
+docker-compose exec db psql -U learningplatform -c "\dt poc_jobs"
+
+# Check row count without Django
+docker-compose exec db psql -U learningplatform -c "SELECT COUNT(*) FROM poc_jobs;"
 ```
 
 ---

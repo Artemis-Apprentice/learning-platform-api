@@ -23,6 +23,8 @@ structlog = "*"
 django-structlog = "*"
 dj-rest-auth = "4.0.1"
 django-allauth = "0.54.0"
+pika = "1.3.2"
+python-dotenv = "*"
 
 [requires]
 python_version = "*"
